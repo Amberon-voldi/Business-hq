@@ -11,6 +11,7 @@ import { getHqContext } from "../notion/hq";
 import { CONTEXT_SECTION_KEYS } from "../notion/types";
 import { requireSharedSecret } from "./auth";
 import { z } from "zod";
+import { agentConnections } from "../hub/notify";
 import { parseRecipient, sendMessage, teamFeed, unreadCount } from "../team/messages";
 import { businessFromRef, loadContexts, promptForJob } from "./util";
 
@@ -91,6 +92,9 @@ adminRoutes.get("/agents", async (c) => {
           token,
           mcpUrl: `${base}/mcp/${token}`,
           apiBase: `${base}/agent/v1`,
+          listenUrl: `${base.replace(/^http/, "ws")}/agent/v1/listen`,
+          sendUrl: `${base}/agent/v1/send`,
+          online: await agentConnections(c.env, o),
           inbox: open.filter((j) => j.owner === o && j.delivery === "inbox").length,
           unread: await unreadCount(c.env, o),
         };
@@ -190,6 +194,8 @@ adminRoutes.get("/setup", async (c) => {
       { method: "POST", path: "/webhook/notion?business=<id>", auth: "X-Webhook-Secret or X-Notion-Signature", purpose: "Task → In progress triggers its intern" },
       { method: "POST", path: "/webhook/github?business=<id>", auth: "X-Hub-Signature-256", purpose: "ai:<intern> labels dispatch; pushes are logged" },
       { method: "POST", path: "/webhook/slack", auth: "X-Slack-Signature", purpose: "/intern [business] <intern|type> <task>, @mentions" },
+      { method: "GET", path: "/agent/v1/listen", auth: "Bearer agent key (or ?key=)", purpose: "LISTEN: WebSocket that pushes each intern its tasks and messages live, with backlog on connect" },
+      { method: "POST", path: "/agent/v1/send", auth: "Bearer agent key", purpose: "SEND: {action: checkin|briefing|task|claim|complete|fail|delegate|message|log, …}" },
       { method: "POST", path: "/mcp/<agent token>", auth: "token in URL", purpose: "MCP connector for Claude apps / Claude Code / any MCP client: check_in, tasks, complete, delegate, messages, log" },
       { method: "GET", path: "/agent/v1/…", auth: "Bearer agent token", purpose: "Agent HTTP API: me, briefing, tasks, claim, complete, fail, delegate, messages, log" },
       { method: "GET", path: "/api/…", auth: "Bearer WEBHOOK_SECRET", purpose: "Panel API: meta, config, jobs, agents, onboarding, messages, setup" },

@@ -110,3 +110,4 @@ export default {
 } satisfies ExportedHandler<Env, DispatchJob>;
 
 export { app };
+export { AgentHub } from "./hub/agentHub";

@@ -111,6 +111,15 @@ Brand Rules are always attached for Grok and Muse, for `email`, `social` and `co
 - **Inbox** *(default)*: the intern's own app does the work. No API key, no per-token bill.
 - **API** *(optional)*: the worker calls Claude/Grok itself. This is only possible when that provider's key is set, and it's billed per token. Without a key, tasks always go to the inbox.
 
+### Each intern's two endpoints
+
+| | Endpoint | |
+|---|---|---|
+| **LISTEN** | `wss://<worker>/agent/v1/listen` · `Authorization: Bearer <key>` (or `?key=`) | WebSocket, always on. Pushes `{"type":"task"}` the moment work is assigned and `{"type":"message"}` when someone writes. On every connect: `hello` + the backlog (open tasks, unread messages), so a dropped connection loses nothing. Send `ping` every ~30 s (answered `pong`). |
+| **SEND** | `POST https://<worker>/agent/v1/send` · `Authorization: Bearer <key>` | Everything the intern does: `{"action": "checkin" \| "briefing" \| "task" \| "claim" \| "complete" \| "fail" \| "delegate" \| "message" \| "log", …}`. `delegate` and `message` are pushed live to the recipient's LISTEN. |
+
+Live delivery runs on a Durable Object per intern (`AgentHub`, WebSocket hibernation, so idle connections are free). The panel's Agents tab shows **listening** while an intern is connected.
+
 ### Onboarding an intern (one prompt)
 Agents tab → intern → **Setup prompt** → copy it into the app the intern runs in. The prompt contains:
 - identity, role, teammates (plus `Human`), and every business
@@ -131,8 +140,10 @@ hq setup --url https://<worker> --key <intern key>     # saved to ~/.config/busi
 
 | Command | |
 |---|---|
+| `hq listen [--once] [--exec ./handler] [--json]` | **LISTEN**: stay connected and receive work and messages live (auto-reconnect, keepalive). `--once` exits on the first task/message; `--exec` runs a handler per event with the JSON on stdin |
+| `hq send '{"action":"…"}'` | **SEND**: raw action |
 | `hq checkin` | New messages (marked read) + open tasks |
-| `hq wait [--interval 60] [--timeout N]` | Block until a task or message arrives (exit 0), or time out (exit 2) |
+| `hq wait [--interval 60] [--timeout N]` | Polling fallback for when WebSockets aren't possible |
 | `hq briefing [--business id]` | Shared context |
 | `hq task <id>` · `hq claim <id>` | Task with its ready-made prompt · mark in progress |
 | `hq complete <id> --summary "…" --file out.md` | Submit (or pipe Markdown on stdin) |
@@ -141,7 +152,7 @@ hq setup --url https://<worker> --key <intern key>     # saved to ~/.config/busi
 | `hq msg <Code\|Pro\|Grok\|Muse\|Human\|team> "<text>"` · `hq inbox [--history]` | Team chat |
 | `hq log "<note>" --business <id>` | Note in the HQ Log |
 
-`hq --json <command>` gives machine-readable output. The always-on loop is: `hq wait` → `hq checkin` → handle everything → repeat.
+`hq --json <command>` gives machine-readable output. The always-on loop is: `hq listen --once` → handle it (via SEND / the `hq` shortcuts) → repeat, or run `hq listen --exec ./handle.sh` as a service.
 
 **Other setups:** in Claude Code run `/loop 15m check in`. In a chat app, say "check in" whenever you want it to work.
 
@@ -181,6 +192,8 @@ hq setup --url https://<worker> --key <intern key>     # saved to ~/.config/busi
 `POST /mcp/<agent key>`: stateless MCP over Streamable HTTP with the tools listed above.
 
 ### Agents (Bearer agent token, `/agent/v1`)
+`GET /listen` (WebSocket) and `POST /send` are the two endpoints interns need. The REST routes below do the same things individually.
+
 | Method | Path | |
 |---|---|---|
 | `GET` | `/me` | Identity, businesses, teammates, task kinds |
@@ -241,6 +254,7 @@ src/
   config/store.ts     business directory + intern delivery (KV)
   routes/             webhooks (notion, github, slack), dispatch, context, jobs, admin, agent API, MCP, panel
   team/messages.ts    team chat between interns and the human
+  hub/                AgentHub Durable Object (LISTEN WebSockets) + push helpers
   dispatch/           job types, start (api/inbox), queue consumer, run pipeline, job records
   agents/             registry + task kinds, prompt builder, brand safety, onboarding prompts, Claude/Grok clients
   notion/             HQ fetch + cache, heading parser, Markdown→blocks, write-back

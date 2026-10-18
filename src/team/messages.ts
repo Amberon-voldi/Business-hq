@@ -1,5 +1,6 @@
 import { OWNERS, type Owner } from "../agents/registry";
 import type { Env } from "../env";
+import { pushToAgent } from "../hub/notify";
 
 export type Participant = Owner | "Human";
 export type Recipient = Participant | "team";
@@ -58,7 +59,11 @@ export async function sendMessage(
   const recipients: Participant[] =
     input.to === "team" ? [...OWNERS, "Human" as const].filter((p) => p !== input.from) : [input.to];
   await Promise.all([
-    ...recipients.map(async (r) => writeList(env, boxKey(r), [...(await readList(env, boxKey(r))), message], BOX_LIMIT)),
+    ...recipients.map(async (r) => {
+      // Delivered live over LISTEN counts as read; otherwise it waits in the unread box.
+      if (r !== "Human" && (await pushToAgent(env, r, { type: "message", message })) > 0) return;
+      await writeList(env, boxKey(r), [...(await readList(env, boxKey(r))), message], BOX_LIMIT);
+    }),
     (async () => writeList(env, FEED_KEY, [...(await readList(env, FEED_KEY)), message], FEED_LIMIT))(),
   ]);
   return message;

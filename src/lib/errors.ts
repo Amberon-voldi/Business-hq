@@ -1,7 +1,7 @@
 /** Error with an HTTP status that route handlers can surface directly. */
 export class HttpError extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 422 | 500 | 502 | 503,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 422 | 426 | 500 | 502 | 503,
     message: string,
     readonly details?: unknown,
   ) {

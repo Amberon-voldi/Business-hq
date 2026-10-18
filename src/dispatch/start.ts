@@ -4,6 +4,7 @@ import type { Env } from "../env";
 import { DispatchError, HttpError, errorMessage } from "../lib/errors";
 import { createNotion } from "../notion/client";
 import { updateTaskStatus } from "../notion/writeback";
+import { pushToAgent } from "../hub/notify";
 import { markJob } from "./jobs";
 import { enqueueDispatch } from "./queue";
 import { activeTaskKey, markTaskActive, reportFailure, runDispatch } from "./run";
@@ -49,7 +50,18 @@ export async function startDispatch(
   }
 
   if (job.delivery === "inbox") {
-    await markJob(env, job, { status: "assigned" });
+    const state = await markJob(env, job, { status: "assigned" });
+    await pushToAgent(env, job.owner, {
+      type: "task",
+      task: {
+        id: job.id,
+        business: business.id,
+        kind: job.kind ?? "general",
+        status: "assigned",
+        task: job.task,
+        createdAt: state.createdAt ?? job.requestedAt,
+      },
+    });
     return { mode: "assigned", id: job.id };
   }
 

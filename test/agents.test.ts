@@ -67,13 +67,15 @@ describe("onboarding prompts", () => {
     expect(p).toContain("claude mcp add --transport http business-hq");
     expect(p).toContain("https://hq.example.dev/agent/v1");
     expect(p).toContain("Authorization: Bearer aih_grok_x");
-    expect(p).toContain("POST /delegate");
+    expect(p).toContain("| `delegate` |");
     expect(p).toContain("send_message");
     expect(p).toContain("/webhook/notion?business=spinternational");
-    expect(p).toContain("/loop 15m check in");
     expect(p).toContain("curl -fsSL https://hq.example.dev/agent/hq -o ~/.local/bin/hq");
     expect(p).toContain("hq setup --url https://hq.example.dev --key aih_grok_x");
-    expect(p).toContain("hq wait");
+    expect(p).toContain("wss://hq.example.dev/agent/v1/listen");
+    expect(p).toContain("POST https://hq.example.dev/agent/v1/send");
+    expect(p).toContain('"type":"task"');
+    expect(p).toContain("hq listen --once");
     expect(p).not.toContain('"api" delivery'); // inbox is the default
     expect(p).toContain("spinternationalpvtltd.com");
     expect(p).toContain("drafts");

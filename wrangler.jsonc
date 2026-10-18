@@ -23,6 +23,12 @@
     { "binding": "HQ_CACHE" }
   ],
 
+  // One Durable Object per intern holds its LISTEN WebSockets (push delivery of work and messages).
+  "durable_objects": {
+    "bindings": [{ "name": "AGENT_HUB", "class_name": "AgentHub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AgentHub"] }],
+
   // LLM calls can take minutes; webhooks must be acked in seconds. Work is queued and
   // processed by the queue consumer below (15-minute wall clock per message).
   "queues": {

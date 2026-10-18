@@ -7,18 +7,29 @@ Single file, Python 3.8+ standard library only. Install:
     curl -fsSL https://<worker>/agent/hq -o ~/.local/bin/hq && chmod +x ~/.local/bin/hq
     hq setup --url https://<worker> --key <your agent key>
 
-Always-on loop:  while true; do hq wait && hq checkin; <handle it>; done
+Your two endpoints:
+  LISTEN  wss://<worker>/agent/v1/listen   work and messages pushed live  →  hq listen
+  SEND    POST https://<worker>/agent/v1/send   {"action": ...}           →  hq send / hq <command>
+
+Always-on:  hq listen --exec ./handle.sh    (runs the handler with each event as JSON on stdin)
 Run `hq --help` or `hq <command> --help` for details.
 """
 import argparse
+import base64
+import hashlib
 import json
 import os
+import socket
+import ssl
+import struct
+import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 CONFIG_PATH = os.path.join(
     os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "business-hq", "config.json"
 )
@@ -254,6 +265,193 @@ def cmd_wait(a):
         time.sleep(max(a.interval, 15))
 
 
+# ---------- LISTEN (minimal RFC 6455 client, stdlib only) ----------
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+class WsIdle(Exception):
+    pass
+
+
+class WsClosed(Exception):
+    pass
+
+
+class WsAuthError(Exception):
+    pass
+
+
+class WebSocket:
+    def __init__(self, url, key):
+        u = urllib.parse.urlsplit(url)
+        secure = u.scheme in ("https", "wss")
+        host, port = u.hostname, u.port or (443 if secure else 80)
+        raw = socket.create_connection((host, port), timeout=30)
+        self.sock = ssl.create_default_context().wrap_socket(raw, server_hostname=host) if secure else raw
+        nonce = base64.b64encode(os.urandom(16)).decode()
+        path = (u.path or "/") + (f"?{u.query}" if u.query else "")
+        self.sock.sendall(
+            (
+                f"GET {path} HTTP/1.1\r\nHost: {u.netloc}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                f"Sec-WebSocket-Key: {nonce}\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer {key}\r\n"
+                f"User-Agent: hq/{VERSION}\r\n\r\n"
+            ).encode()
+        )
+        head = b""
+        while b"\r\n\r\n" not in head:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise WsClosed("connection closed during handshake")
+            head += chunk
+        head, _, self.buf = head.partition(b"\r\n\r\n")
+        lines = head.decode(errors="replace").split("\r\n")
+        status = lines[0].split(" ")
+        if len(status) < 2 or status[1] != "101":
+            code = status[1] if len(status) > 1 else "?"
+            if code in ("401", "403"):
+                raise WsAuthError(f"LISTEN refused ({code}): check your key with `hq me`")
+            raise WsClosed(f"LISTEN handshake failed: {lines[0]}")
+        accept = base64.b64encode(hashlib.sha1((nonce + WS_GUID).encode()).digest()).decode()
+        headers = {l.split(":", 1)[0].strip().lower(): l.split(":", 1)[1].strip() for l in lines[1:] if ":" in l}
+        if headers.get("sec-websocket-accept") != accept:
+            raise WsClosed("LISTEN handshake failed: bad Sec-WebSocket-Accept")
+
+    def _recv_exact(self, n, at_boundary):
+        while len(self.buf) < n:
+            try:
+                chunk = self.sock.recv(65536)
+            except socket.timeout:
+                if at_boundary and not self.buf:
+                    raise WsIdle()
+                continue
+            if not chunk:
+                raise WsClosed("connection closed")
+            self.buf += chunk
+        data, self.buf = self.buf[:n], self.buf[n:]
+        return data
+
+    def send(self, text, opcode=1):
+        payload = text.encode() if isinstance(text, str) else text
+        mask = os.urandom(4)
+        n = len(payload)
+        header = bytes([0x80 | opcode])
+        if n < 126:
+            header += bytes([0x80 | n])
+        elif n < 65536:
+            header += bytes([0x80 | 126]) + struct.pack("!H", n)
+        else:
+            header += bytes([0x80 | 127]) + struct.pack("!Q", n)
+        self.sock.sendall(header + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+
+    def recv(self):
+        """Next text message. Raises WsIdle when nothing arrived for the socket timeout."""
+        message, first = b"", True
+        while True:
+            b1, b2 = self._recv_exact(2, at_boundary=first)
+            first = False
+            fin, opcode = b1 & 0x80, b1 & 0x0F
+            n = b2 & 0x7F
+            if n == 126:
+                n = struct.unpack("!H", self._recv_exact(2, False))[0]
+            elif n == 127:
+                n = struct.unpack("!Q", self._recv_exact(8, False))[0]
+            mask = self._recv_exact(4, False) if b2 & 0x80 else None
+            payload = self._recv_exact(n, False) if n else b""
+            if mask:
+                payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+            if opcode == 8:
+                raise WsClosed("server closed the connection")
+            if opcode == 9:
+                self.send(payload, opcode=10)
+                first = not message
+                continue
+            if opcode == 10:
+                first = not message
+                continue
+            message += payload
+            if fin:
+                return message.decode(errors="replace")
+
+    def close(self):
+        try:
+            self.send(b"", opcode=8)
+            self.sock.close()
+        except OSError:
+            pass
+
+
+def listen_url():
+    url, key = load_config()
+    return url.replace("https://", "wss://", 1).replace("http://", "ws://", 1) + "/agent/v1/listen", key
+
+
+def handle_event(event, a):
+    if a.exec:
+        proc = subprocess.run(a.exec, shell=True, input=json.dumps(event), text=True)
+        if proc.returncode != 0:
+            print(f"hq: handler exited {proc.returncode} for {event.get('type')} event", file=sys.stderr)
+    elif a.json:
+        print(json.dumps(event, ensure_ascii=False), flush=True)
+    elif event["type"] == "hello":
+        print(f"● listening as {event['owner']}: {event['openTasks']} open task(s), {event['unreadMessages']} unread", flush=True)
+    elif event["type"] == "task":
+        t = event["task"]
+        tag = " (waiting)" if event.get("backlog") else ""
+        print(f"▶ task{tag} {t['id']} [{t['business']}/{t['kind']}]: {t['task']}", flush=True)
+    elif event["type"] == "message":
+        print_messages([event["message"]])
+        sys.stdout.flush()
+
+
+def cmd_listen(a):
+    """Stays connected to LISTEN forever (auto-reconnect), handling each pushed event."""
+    backoff = 1
+    while True:
+        url, key = listen_url()
+        ws = None
+        try:
+            ws = WebSocket(url, key)
+            backoff = 1
+            while True:
+                try:
+                    raw = ws.recv()
+                except WsIdle:
+                    ws.send("ping")  # keepalive; the server answers "pong"
+                    continue
+                if raw == "pong":
+                    continue
+                try:
+                    event = json.loads(raw)
+                except ValueError:
+                    continue
+                if event.get("type") == "pong":
+                    continue
+                handle_event(event, a)
+                if a.once and event.get("type") in ("task", "message"):
+                    ws.close()
+                    return
+        except WsAuthError as e:
+            raise HqError(str(e))
+        except (WsClosed, OSError, ssl.SSLError) as e:
+            if not a.quiet:
+                print(f"hq: LISTEN disconnected ({e}); reconnecting in {backoff}s", file=sys.stderr)
+        finally:
+            if ws:
+                ws.close()
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 60)
+
+
+def cmd_send(a):
+    """Raw SEND: hq send '{"action":"message","to":"Muse","text":"hi"}' (or JSON on stdin)."""
+    payload = a.payload or (sys.stdin.read() if not sys.stdin.isatty() else "")
+    try:
+        body = json.loads(payload)
+    except ValueError:
+        raise HqError('Payload must be JSON, e.g. {"action": "checkin"}')
+    out(call("POST", "/send", body), True)
+
+
 def main():
     p = argparse.ArgumentParser(prog="hq", description="business-hq CLI for AI Interns")
     p.add_argument("--json", action="store_true", help="raw JSON output")
@@ -316,7 +514,17 @@ def main():
     s.add_argument("--business")
     s.set_defaults(fn=cmd_log)
 
-    s = sub.add_parser("wait", help="block until a task or message arrives (exit 0), or timeout (exit 2)")
+    s = sub.add_parser("listen", help="LISTEN: stay connected and receive work + messages live (auto-reconnects)")
+    s.add_argument("--exec", help="shell command run for each event, with the event JSON on stdin")
+    s.add_argument("--once", action="store_true", help="exit after the first task or message (including backlog)")
+    s.add_argument("--quiet", action="store_true", help="don't report reconnects")
+    s.set_defaults(fn=cmd_listen)
+
+    s = sub.add_parser("send", help="SEND: raw action JSON, e.g. '{\"action\":\"checkin\"}'")
+    s.add_argument("payload", nargs="?")
+    s.set_defaults(fn=cmd_send)
+
+    s = sub.add_parser("wait", help="(polling fallback) block until a task or message arrives (exit 0), or timeout (exit 2)")
     s.add_argument("--interval", type=int, default=60, help="seconds between polls (min 15, default 60)")
     s.add_argument("--timeout", type=int, default=0, help="give up after N seconds (0 = never)")
     s.add_argument("--quiet", action="store_true")

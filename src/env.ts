@@ -1,5 +1,6 @@
 import type { Owner } from "./agents/registry";
 import type { DispatchJob } from "./dispatch/types";
+import type { AgentHub } from "./hub/agentHub";
 
 export interface Env {
   // Secrets (wrangler secret put)
@@ -25,6 +26,8 @@ export interface Env {
   // Bindings
   HQ_CACHE: KVNamespace;
   DISPATCH_QUEUE: Queue<DispatchJob>;
+  /** One Durable Object per intern holding its LISTEN WebSockets. */
+  AGENT_HUB: DurableObjectNamespace<AgentHub>;
 }
 
 export type AppBindings = { Bindings: Env; Variables: { requestId: string; agent?: Owner } };

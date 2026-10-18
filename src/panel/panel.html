@@ -274,7 +274,7 @@
         <h2>Onboard your agents</h2>
         <p class="muted" style="margin:0 0 8px">Each intern runs in an app you already use, so nothing is billed per token. Copy its <b>Setup prompt</b> into that app once. It contains the connector URL, the API key, every endpoint, the webhooks, the team roster and the working routine.</p>
         <ul class="muted" style="margin:0 0 8px;padding-left:18px;font-size:13px">
-          <li><b>Agent with its own computer (always on):</b> run the intern's <b>install command</b>, then it loops <code>hq wait</code> → <code>hq checkin</code> → work, forever. The setup prompt explains it all.</li>
+          <li><b>Agent with its own computer (always on):</b> two endpoints. It stays connected to <b>LISTEN</b> (WebSocket, work is pushed the moment it's assigned) and uses <b>SEND</b> for everything it does. The <code>hq</code> CLI wraps both: <code>hq listen</code>. Cards show <b>listening</b> while it's connected.</li>
           <li><b>Claude app (Pro/Max):</b> Settings → Connectors → Add custom connector → paste the intern's <b>Connector URL</b>, then paste the setup prompt into a Project's instructions.</li>
           <li><b>Claude Code:</b> <code>claude mcp add --transport http business-hq &lt;Connector URL&gt;</code>, then run <code>/loop 15m check in</code> to stay on duty hands-free.</li>
           <li><b>Apps that can't call tools</b> (e.g. a plain chat): use the <b>Offline pack</b> and paste the reply back below.</li>
@@ -773,10 +773,15 @@
         onclick: () => setDelivery(a.owner, "api") }, "API"));
     return h("div", { class: "card" },
       h("div", { class: "row", style: "margin-bottom:6px" }, h("h2", { style: "margin:0" }, a.owner),
-        h("span", { class: "spacer" }), a.unread ? pill(a.unread + " unread", "warn") : null, a.inbox ? pill(a.inbox + " in inbox", "assigned") : null),
+        h("span", { class: "spacer" }), a.online ? pill("listening", "ok") : pill("offline", ""),
+        a.unread ? pill(a.unread + " unread", "warn") : null, a.inbox ? pill(a.inbox + " in inbox", "assigned") : null),
       h("p", { class: "muted", style: "margin:0 0 12px;font-size:13px" }, a.role),
       h("div", { class: "row", style: "margin-bottom:12px" }, h("span", { class: "label", style: "margin:0" }, "Delivery"), seg),
-      h("span", { class: "label" }, "Connector URL (MCP)"),
+      h("span", { class: "label" }, "LISTEN (WebSocket: work and messages pushed live)"),
+      copyLine(a.listenUrl, a.owner + "'s LISTEN URL"),
+      h("span", { class: "label" }, "SEND (POST {\"action\": …})"),
+      copyLine(a.sendUrl, "SEND URL"),
+      h("span", { class: "label" }, "Connector URL (MCP, for Claude apps)"),
       h("div", { class: "copyline" }, h("code", {}, maskedUrl), copyBtn(a.mcpUrl, a.owner + "'s connector URL")),
       h("span", { class: "label" }, "API key (Bearer token for " + a.apiBase.replace(/^https?:\/\//, "") + ")"),
       h("div", { class: "copyline" }, h("code", {}, mask(a.token)), copyBtn(a.token, a.owner + "'s key")),
