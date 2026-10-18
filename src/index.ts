@@ -49,7 +49,7 @@ app.use(
 
 // Fail closed if the worker is deployed without its required secrets.
 // The panel page and /health stay reachable so a misconfiguration is visible.
-const ALWAYS_REACHABLE = new Set(["/", "/health", "/panel"]);
+const ALWAYS_REACHABLE = new Set(["/", "/health", "/panel", "/agent/hq"]);
 app.use("*", async (c, next) => {
   if (!ALWAYS_REACHABLE.has(c.req.path)) {
     const missing = missingRequiredSecrets(c.env);

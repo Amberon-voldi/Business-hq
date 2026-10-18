@@ -99,13 +99,34 @@ export function connectedPrompt(args: { owner: Owner; config: HqConfig; origin: 
 ## 1 · Connect to business-hq
 business-hq is the team's shared server: your inbox, the shared context, team chat and the Notion write-back. Use the first option your environment supports.
 
-**A. Connector (MCP): Claude apps, Claude Code, any MCP client**
+**A. Your own computer (recommended for always-on agents): the \`hq\` command**
+\`\`\`bash
+mkdir -p ~/.local/bin && export PATH="$HOME/.local/bin:$PATH"
+curl -fsSL ${origin}/agent/hq -o ~/.local/bin/hq && chmod +x ~/.local/bin/hq
+hq setup --url ${origin} --key ${token}
+hq checkin
+\`\`\`
+Needs python3 (standard library only). The key is saved to \`~/.config/business-hq/config.json\` (mode 600). Commands:
+- \`hq checkin\`: new messages (marked read) and your open tasks
+- \`hq briefing [--business <id>]\`: shared context
+- \`hq task <id>\` → \`hq claim <id>\` → \`hq complete <id> --summary "…" --file result.md\` (or pipe the Markdown in)
+- \`hq fail <id> --reason "…"\`
+- \`hq delegate "<task>" --to Code --kind code --business spi --notes "…" --parent <your task id>\`
+- \`hq msg <Code|Pro|Grok|Muse|Human|team> "<text>"\` · \`hq inbox [--history]\` · \`hq log "<note>" --business <id>\`
+- \`hq wait\`: sleeps until a task or message arrives (polls every 60 s). Put \`--json\` before a command for machine-readable output (\`hq --json tasks\`).
+
+**Always-on loop.** You never need to be prompted; run this forever:
+1. \`hq wait\` (blocks until there's work)
+2. \`hq checkin\`, then handle every message and task as in section 3
+3. back to 1
+
+**B. Connector (MCP): Claude apps, Claude Code, any MCP client**
 - Connector URL (it contains your key; keep it private): \`${mcp}\`
 - Claude app: Settings → Connectors → Add custom connector → name it **business-hq** → paste the URL.
 - Claude Code: \`claude mcp add --transport http business-hq ${mcp}\`
 - Tools: \`check_in\`, \`get_briefing\`, \`list_tasks\`, \`get_task\`, \`claim_task\`, \`complete_task\`, \`fail_task\`, \`delegate_task\`, \`send_message\`, \`read_messages\`, \`log_note\`.
 
-**B. HTTP API: anything that can make web requests (scripts, actions, tools)**
+**C. HTTP API: anything that can make web requests**
 - Base URL: \`${api}\`
 - Key, sent on every request: \`Authorization: Bearer ${token}\`
 
@@ -123,7 +144,7 @@ business-hq is the team's shared server: your inbox, the shared context, team ch
 
 Task kinds: ${KIND_LIST}.
 
-**C. Can't connect?** Say so and ask the human for your **offline pack** (panel → Agents → ${owner}).
+**D. Can't connect at all?** Say so and ask the human for your **offline pack** (panel → Agents → ${owner}).
 
 Your key only grants ${owner}'s access. Never put it in a deliverable, a message or anywhere public.
 
@@ -147,7 +168,7 @@ Whenever a session starts, or you're told **"check in"**:
 5. End with a 3-line report to the human: done · delegated · blocked.
 
 Don't ask for confirmation between steps. Ask the human (\`send_message\` to \`Human\`) only when you can't proceed without them.
-To stay on duty without prompting: in Claude Code run \`/loop 15m check in\`. In a chat app, the human just says "check in".
+To stay on duty without prompting: on your own computer use the \`hq wait\` loop (section 1A); in Claude Code, \`/loop 15m check in\`; in a chat app, the human says "check in".
 ${apiNote}
 ## 4 · Talking to teammates
 - Use \`send_message\` for questions, hand-offs and FYIs. Keep it short and specific, and include the business id and task id when relevant.

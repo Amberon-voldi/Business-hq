@@ -71,6 +71,9 @@ describe("onboarding prompts", () => {
     expect(p).toContain("send_message");
     expect(p).toContain("/webhook/notion?business=spinternational");
     expect(p).toContain("/loop 15m check in");
+    expect(p).toContain("curl -fsSL https://hq.example.dev/agent/hq -o ~/.local/bin/hq");
+    expect(p).toContain("hq setup --url https://hq.example.dev --key aih_grok_x");
+    expect(p).toContain("hq wait");
     expect(p).not.toContain('"api" delivery'); // inbox is the default
     expect(p).toContain("spinternationalpvtltd.com");
     expect(p).toContain("drafts");

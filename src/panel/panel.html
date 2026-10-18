@@ -274,6 +274,7 @@
         <h2>Onboard your agents</h2>
         <p class="muted" style="margin:0 0 8px">Each intern runs in an app you already use, so nothing is billed per token. Copy its <b>Setup prompt</b> into that app once. It contains the connector URL, the API key, every endpoint, the webhooks, the team roster and the working routine.</p>
         <ul class="muted" style="margin:0 0 8px;padding-left:18px;font-size:13px">
+          <li><b>Agent with its own computer (always on):</b> run the intern's <b>install command</b>, then it loops <code>hq wait</code> → <code>hq checkin</code> → work, forever. The setup prompt explains it all.</li>
           <li><b>Claude app (Pro/Max):</b> Settings → Connectors → Add custom connector → paste the intern's <b>Connector URL</b>, then paste the setup prompt into a Project's instructions.</li>
           <li><b>Claude Code:</b> <code>claude mcp add --transport http business-hq &lt;Connector URL&gt;</code>, then run <code>/loop 15m check in</code> to stay on duty hands-free.</li>
           <li><b>Apps that can't call tools</b> (e.g. a plain chat): use the <b>Offline pack</b> and paste the reply back below.</li>
@@ -779,6 +780,12 @@
       h("div", { class: "copyline" }, h("code", {}, maskedUrl), copyBtn(a.mcpUrl, a.owner + "'s connector URL")),
       h("span", { class: "label" }, "API key (Bearer token for " + a.apiBase.replace(/^https?:\/\//, "") + ")"),
       h("div", { class: "copyline" }, h("code", {}, mask(a.token)), copyBtn(a.token, a.owner + "'s key")),
+      h("span", { class: "label" }, "Install on its own computer (Linux/macOS)"),
+      (() => {
+        const base = a.apiBase.replace(/\/agent\/v1$/, "");
+        const cmd = "mkdir -p ~/.local/bin && curl -fsSL " + base + "/agent/hq -o ~/.local/bin/hq && chmod +x ~/.local/bin/hq && ~/.local/bin/hq setup --url " + base + " --key " + a.token;
+        return h("div", { class: "copyline" }, h("code", {}, "curl …/agent/hq && hq setup …"), copyBtn(cmd, a.owner + "'s install command"));
+      })(),
       h("div", { class: "row", style: "margin-top:12px" },
         h("button", { class: "btn primary small", onclick: () => showPrompt(a.owner, "connected") }, "Setup prompt"),
         h("button", { class: "btn small", onclick: () => showPrompt(a.owner, "offline") }, "Offline pack")));

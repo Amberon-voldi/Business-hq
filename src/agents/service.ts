@@ -63,6 +63,12 @@ export async function listTasks(env: Env, owner: Owner) {
     .map((j) => ({ id: j.id, business: j.business, kind: j.kind, status: j.status, task: j.task, createdAt: j.createdAt }));
 }
 
+/** Cheap poll for always-on agents: counts only, nothing is marked read. */
+export async function pending(env: Env, owner: Owner) {
+  const [tasks, unread] = await Promise.all([listTasks(env, owner), unreadCount(env, owner)]);
+  return { tasks: tasks.length, unread, oldestTaskId: tasks[0]?.id ?? null };
+}
+
 export async function getTask(env: Env, owner: Owner, id: string) {
   const state = await ownTask(env, owner, id);
   const job = state.job;

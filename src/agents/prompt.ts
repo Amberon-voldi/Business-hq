@@ -95,7 +95,7 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
     .join(", ");
 
   const system = [
-    `You are "${owner}", one of the AI Interns. You are working for ${businessLine(business)}.`,
+    `You are "${owner}", one of the AI Interns. You are working for ${businessLine(business).replace(/\.+$/, "")}.`,
     `Your role: ${role}`,
     `Teammates: ${teammates}.`,
     "",

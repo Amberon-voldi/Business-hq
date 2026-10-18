@@ -121,7 +121,29 @@ Agents tab → intern → **Setup prompt** → copy it into the app the intern r
 
 Keys are derived from `WEBHOOK_SECRET` and scoped to one intern; changing the secret rotates them all.
 
-**Hands-free:** in Claude Code run `/loop 15m check in`. In a chat app, say "check in" whenever you want it to work.
+**Agents with their own computer (always on), e.g. Grok and Muse:** the setup prompt starts with the `hq` CLI (one Python file, no dependencies):
+
+```bash
+mkdir -p ~/.local/bin
+curl -fsSL https://<worker>/agent/hq -o ~/.local/bin/hq && chmod +x ~/.local/bin/hq
+hq setup --url https://<worker> --key <intern key>     # saved to ~/.config/business-hq/config.json (600)
+```
+
+| Command | |
+|---|---|
+| `hq checkin` | New messages (marked read) + open tasks |
+| `hq wait [--interval 60] [--timeout N]` | Block until a task or message arrives (exit 0), or time out (exit 2) |
+| `hq briefing [--business id]` | Shared context |
+| `hq task <id>` · `hq claim <id>` | Task with its ready-made prompt · mark in progress |
+| `hq complete <id> --summary "…" --file out.md` | Submit (or pipe Markdown on stdin) |
+| `hq fail <id> --reason "…"` | Blocked: say what's needed |
+| `hq delegate "<task>" --to Code --kind code --business spi --parent <id>` | Hand off to a teammate |
+| `hq msg <Code\|Pro\|Grok\|Muse\|Human\|team> "<text>"` · `hq inbox [--history]` | Team chat |
+| `hq log "<note>" --business <id>` | Note in the HQ Log |
+
+`hq --json <command>` gives machine-readable output. The always-on loop is: `hq wait` → `hq checkin` → handle everything → repeat.
+
+**Other setups:** in Claude Code run `/loop 15m check in`. In a chat app, say "check in" whenever you want it to work.
 
 **Apps that can't call tools:** use the **Offline pack** (context, inbox and messages pasted in). The intern replies with `=== RESULT <id> ===` and `=== MESSAGE <to> ===` blocks; paste them into **Agents → Paste an offline agent's reply**.
 
@@ -137,6 +159,7 @@ Keys are derived from `WEBHOOK_SECRET` and scoped to one intern; changing the se
 |---|---|---|---|
 | `GET` | `/health` | — | Health + config check |
 | `GET` | `/panel` | sign-in in the browser | Management panel |
+| `GET` | `/agent/hq` | — | The `hq` CLI (no secrets inside) |
 | `POST` | `/webhook/notion?business=<id>` | `X-Webhook-Secret` or `X-Notion-Signature` | Task → **In progress** triggers its Owner |
 | `POST` | `/webhook/github?business=<id>` | `X-Hub-Signature-256` | `ai:<intern>` labels delegate; default-branch pushes are logged |
 | `POST` | `/webhook/slack` | `X-Slack-Signature` | `/intern [business] <intern\|type> <task>`, @mentions |
@@ -162,6 +185,7 @@ Keys are derived from `WEBHOOK_SECRET` and scoped to one intern; changing the se
 |---|---|---|
 | `GET` | `/me` | Identity, businesses, teammates, task kinds |
 | `GET` | `/briefing?business=<id>&format=json` | Shared context (Markdown by default) |
+| `GET` | `/pending` | Counts of open tasks and unread messages (cheap poll; marks nothing read) |
 | `GET` | `/tasks` · `/tasks/:id` | Inbox · one task with a ready-made prompt (system + user) |
 | `POST` | `/tasks/:id/claim` · `/complete` · `/fail` | `complete`: `{summary?, output}` · `fail`: `{reason}` |
 | `POST` | `/delegate` | `{task, owner?, kind?, business?, notes?, parent_task_id?}`. Hand off to a teammate (max chain depth 3, not to yourself); they get a message |
@@ -221,6 +245,7 @@ src/
   agents/             registry + task kinds, prompt builder, brand safety, onboarding prompts, Claude/Grok clients
   notion/             HQ fetch + cache, heading parser, Markdown→blocks, write-back
   panel/panel.html    management panel (single file, no build step)
+  cli/hq.py           agent CLI served at /agent/hq
   lib/                signatures, agent tokens, errors, logging, Slack, idempotency, time
 test/                 vitest unit tests
 ```

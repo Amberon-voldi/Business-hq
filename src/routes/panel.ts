@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { AppBindings } from "../env";
+import hqCli from "../cli/hq.py";
 import panelHtml from "../panel/panel.html";
 
 export const panelRoutes = new Hono<AppBindings>();
@@ -28,3 +29,12 @@ panelRoutes.get("/panel", (c) => {
     "X-Content-Type-Options": "nosniff",
   });
 });
+
+/** The hq CLI for agents with their own computer. No secrets inside; the key is set with `hq setup`. */
+panelRoutes.get("/agent/hq", (c) =>
+  c.body(hqCli, 200, {
+    "content-type": "text/x-python; charset=utf-8",
+    "content-disposition": 'inline; filename="hq"',
+    "cache-control": "no-cache",
+  }),
+);

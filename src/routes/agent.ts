@@ -37,6 +37,8 @@ agentRoutes.get("/briefing", async (c) =>
   c.text(await agent.briefing(c.env, me(c), c.req.query("business")), 200, { "content-type": "text/markdown; charset=utf-8" }),
 );
 
+agentRoutes.get("/pending", async (c) => c.json(await agent.pending(c.env, me(c))));
+
 agentRoutes.get("/tasks", async (c) => c.json({ owner: me(c), tasks: await agent.listTasks(c.env, me(c)) }));
 agentRoutes.get("/tasks/:id", async (c) => c.json(await agent.getTask(c.env, me(c), c.req.param("id"))));
 agentRoutes.post("/tasks/:id/claim", async (c) => c.json(await agent.claimTask(c.env, me(c), c.req.param("id"))));
