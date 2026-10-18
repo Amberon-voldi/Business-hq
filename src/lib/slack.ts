@@ -22,8 +22,9 @@ export async function postSlackReply(botToken: string | undefined, reply: SlackR
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ response_type: "in_channel", replace_original: false, text }),
     });
-    if (!res.ok) throw new Error(`Slack response_url returned ${res.status}`);
-    return;
+    if (res.ok) return;
+    // response_url expires after 30 min (inbox tasks often take longer): fall back to the bot.
+    if (!(reply.channel && botToken)) throw new Error(`Slack response_url returned ${res.status}`);
   }
 
   if (reply.channel && botToken) {

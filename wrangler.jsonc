@@ -6,6 +6,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
+  // The management panel (src/panel/panel.html) is bundled as a text module.
+  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+
   // Non-secret configuration. Secrets go in via `wrangler secret put` (see README).
   "vars": {
     "CLAUDE_MODEL": "claude-opus-5-5",

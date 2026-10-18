@@ -1,9 +1,11 @@
+import type { Owner } from "./agents/registry";
 import type { DispatchJob } from "./dispatch/types";
 
 export interface Env {
   // Secrets (wrangler secret put)
   NOTION_TOKEN: string;
-  NOTION_HQ_PAGE_ID: string;
+  /** noida.fit's HQ page; other businesses' HQ pages are set in the panel's Directory. */
+  NOTION_HQ_PAGE_ID?: string;
   ANTHROPIC_API_KEY: string;
   WEBHOOK_SECRET: string;
   XAI_API_KEY?: string;
@@ -24,9 +26,9 @@ export interface Env {
   DISPATCH_QUEUE: Queue<DispatchJob>;
 }
 
-export type AppBindings = { Bindings: Env; Variables: { requestId: string } };
+export type AppBindings = { Bindings: Env; Variables: { requestId: string; agent?: Owner } };
 
-const REQUIRED_SECRETS = ["NOTION_TOKEN", "NOTION_HQ_PAGE_ID", "ANTHROPIC_API_KEY", "WEBHOOK_SECRET"] as const;
+const REQUIRED_SECRETS = ["NOTION_TOKEN", "ANTHROPIC_API_KEY", "WEBHOOK_SECRET"] as const;
 
 export function missingRequiredSecrets(env: Env): string[] {
   return REQUIRED_SECRETS.filter((k) => !env[k]);

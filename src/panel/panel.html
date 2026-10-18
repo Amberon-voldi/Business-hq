@@ -1,0 +1,953 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>AI Interns HQ</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23090a0f'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%239ddc2e'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #090a0f;
+    --surface: #10121a;
+    --surface-2: #161924;
+    --border: #232736;
+    --text: #e8eaf0;
+    --muted: #8a90a3;
+    --accent: #9ddc2e;
+    --accent-ink: #0b0d08;
+    --danger: #ff6b6b;
+    --warn: #f4c152;
+    --info: #6cb6ff;
+    --radius: 12px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+  code, .mono { font-family: var(--mono); font-size: 12px; }
+  code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; word-break: break-all; }
+
+  .shell { max-width: 1180px; margin: 0 auto; padding: 0 16px 48px; }
+  header.top { display: flex; align-items: center; gap: 12px; padding: 18px 0; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; letter-spacing: -0.01em; }
+  .brand .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 18px rgba(157,220,46,.55); }
+  .spacer { flex: 1; }
+  #biz-switch { width: auto; min-width: 170px; }
+
+  nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 24px; overflow-x: auto; }
+  nav.tabs button { background: none; border: 0; padding: 10px 14px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+  nav.tabs button:hover { color: var(--text); }
+  nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; min-width: 0; }
+  .card h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+  .card h3 { margin: 18px 0 8px; font-size: 13px; font-weight: 600; }
+  .grid { display: grid; gap: 16px; }
+  .stats { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .stat .value { font-size: 28px; font-weight: 650; letter-spacing: -0.02em; }
+  .stat .label { color: var(--muted); font-size: 12px; }
+  .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cards { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  @media (max-width: 820px) { .two { grid-template-columns: 1fr; } }
+  @media (max-width: 380px) { .cards { grid-template-columns: 1fr; } }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface-2); padding: 7px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+  .btn:hover { border-color: #39405a; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.danger { color: #ffb3b3; }
+  .btn.small { padding: 4px 9px; font-size: 12px; }
+  .btn.ghost { background: none; }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); background: var(--surface-2); white-space: nowrap; }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .pill.ok::before, .pill.done::before { background: var(--accent); }
+  .pill.bad::before, .pill.failed::before, .pill.blocked::before { background: var(--danger); }
+  .pill.running::before, .pill.queued::before, .pill.retrying::before, .pill.inprogress::before { background: var(--info); animation: pulse 1.4s infinite; }
+  .pill.assigned::before, .pill.todo::before, .pill.warn::before { background: var(--warn); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 6px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+
+  label.field { display: block; margin-bottom: 14px; }
+  label.field > span, .label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  input[type=text], input[type=password], textarea, select {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; outline: none;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { min-height: 120px; resize: vertical; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0 12px; }
+
+  .owners { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .owner { text-align: left; border: 1px solid var(--border); background: var(--bg); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+  .owner b { display: block; margin-bottom: 2px; }
+  .owner small { color: var(--muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .owner[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; cursor: pointer; user-select: none; font-size: 13px; }
+  .chip input { accent-color: var(--accent); margin: 0; }
+  .chip.locked { border-color: rgba(157,220,46,.5); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: none; padding: 5px 11px; cursor: pointer; color: var(--muted); font-size: 12px; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: var(--surface-2); }
+  .table-wrap { overflow-x: auto; }
+  td.task { max-width: 420px; }
+  .muted { color: var(--muted); }
+  .empty { color: var(--muted); padding: 28px 0; text-align: center; }
+  .copyline { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .copyline code { flex: 1; min-width: 0; padding: 6px 8px; }
+
+  pre.output { white-space: pre-wrap; word-wrap: break-word; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; font: 13px/1.55 var(--mono); max-height: 60vh; overflow: auto; margin: 0; }
+  .warnbox { border: 1px solid rgba(244,193,82,.45); background: rgba(244,193,82,.08); color: #f7d58a; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+  .errbox { border: 1px solid rgba(255,107,107,.45); background: rgba(255,107,107,.08); color: #ffb3b3; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+  .okbox { border: 1px solid rgba(157,220,46,.4); background: rgba(157,220,46,.07); color: #cdeb98; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+
+  .ctx { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 16px; }
+  @media (max-width: 720px) { .ctx { grid-template-columns: 1fr; } }
+  .ctx-list button { display: block; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 8px; padding: 8px 10px; cursor: pointer; color: var(--muted); }
+  .ctx-list button[aria-selected="true"] { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+
+  dialog { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 14px; padding: 0; width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .dlg-head { display: flex; gap: 10px; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .dlg-body { padding: 18px; overflow: auto; max-height: calc(100vh - 140px); }
+  .kv { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 6px 12px; margin: 0 0 16px; font-size: 13px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; word-break: break-word; }
+
+  .login { max-width: 400px; margin: 12vh auto 0; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--surface-2); border: 1px solid var(--border); padding: 10px 16px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.4); z-index: 50; max-width: calc(100vw - 32px); }
+  .toast.err { border-color: rgba(255,107,107,.6); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div class="brand"><span class="dot"></span>AI Interns HQ</div>
+    <span class="spacer"></span>
+    <select id="biz-switch" aria-label="Business" hidden></select>
+    <span id="health-pill" class="pill">checking…</span>
+    <button id="signout" class="btn ghost small" hidden>Sign out</button>
+  </header>
+
+  <section id="login" class="login" hidden>
+    <div class="card">
+      <h2>Sign in</h2>
+      <p class="muted" style="margin-top:0">Enter the worker's <span class="mono">WEBHOOK_SECRET</span>. It stays in this browser and is sent as a Bearer token.</p>
+      <form id="login-form">
+        <label class="field"><span>Secret</span><input id="login-secret" type="password" autocomplete="current-password" required></label>
+        <label class="row" style="margin-bottom:14px"><input id="login-remember" type="checkbox"> <span class="muted">Remember on this device</span></label>
+        <div id="login-error" class="errbox" hidden></div>
+        <button class="btn primary" type="submit">Sign in</button>
+      </form>
+    </div>
+  </section>
+
+  <main id="app" hidden>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+      <button role="tab" data-tab="dispatch">Delegate</button>
+      <button role="tab" data-tab="tasks">Task Board</button>
+      <button role="tab" data-tab="jobs">Jobs</button>
+      <button role="tab" data-tab="agents">Agents</button>
+      <button role="tab" data-tab="directory">Directory</button>
+      <button role="tab" data-tab="context">HQ Context</button>
+      <button role="tab" data-tab="setup">Setup</button>
+    </nav>
+
+    <!-- Overview -->
+    <section data-panel="overview">
+      <div id="setup-banner"></div>
+      <div class="grid stats" id="stats"></div>
+      <div class="grid two" style="margin-top:16px">
+        <div class="card">
+          <div class="row" style="margin-bottom:12px"><h2 style="margin:0">Recent jobs</h2><span class="spacer"></span><button class="btn small" data-goto="jobs">View all</button></div>
+          <div id="recent-jobs"></div>
+        </div>
+        <div class="card">
+          <h2>Businesses</h2>
+          <div id="biz-overview"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Delegate -->
+    <section data-panel="dispatch" hidden>
+      <div class="grid two">
+        <form class="card" id="dispatch-form">
+          <h2>Delegate a task</h2>
+          <div class="cols">
+            <label class="field"><span>Business</span><select id="d-business"></select></label>
+            <label class="field"><span>Task type</span><select id="d-kind"></select></label>
+          </div>
+          <span class="label">Intern</span>
+          <div class="owners" id="owner-picker"></div>
+          <label class="field"><span>Task</span><textarea id="d-task" required maxlength="20000" placeholder="e.g. Email the venue partner to confirm Sunday's run-club slot"></textarea></label>
+          <div style="margin-bottom:14px">
+            <span class="label">Context sections</span>
+            <div class="chips" id="d-sections"></div>
+            <div class="hint" id="d-brand-hint"></div>
+          </div>
+          <div class="cols">
+            <label class="field"><span>Delivery</span>
+              <select id="d-delivery">
+                <option value="">Intern default</option>
+                <option value="api">Run now (API)</option>
+                <option value="inbox">Agent inbox</option>
+              </select>
+            </label>
+            <label class="field"><span>Notion task (optional)</span><input id="d-notion" type="text" placeholder="Task Board page URL or id"></label>
+          </div>
+          <label class="row" style="margin-bottom:16px"><input id="d-wait" type="checkbox"> <span class="muted">Wait for the result here (API delivery; can take a few minutes)</span></label>
+          <div id="d-error" class="errbox" hidden></div>
+          <button class="btn primary" type="submit" id="d-submit">Delegate</button>
+        </form>
+        <div class="card">
+          <h2>Result</h2>
+          <div id="d-result"><div class="empty">Delegate a task to see it here.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Task Board -->
+    <section data-panel="tasks" hidden>
+      <div class="card">
+        <div class="row" style="margin-bottom:12px">
+          <h2 style="margin:0">Task Board · <span class="biz-name"></span></h2>
+          <span class="spacer"></span>
+          <select id="t-filter" style="width:auto">
+            <option value="">All statuses</option>
+            <option>To do</option><option>In progress</option><option>Blocked</option><option>Done</option>
+          </select>
+          <button class="btn small" id="t-refresh">Refresh from Notion</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Task</th><th>Owner</th><th>Status</th><th></th></tr></thead>
+          <tbody id="t-body"></tbody>
+        </table></div>
+        <p class="hint">"Run" sends the task to its intern (using the intern's delivery setting) and moves it to In progress. Only rows of an inline Task Board database can be run.</p>
+      </div>
+    </section>
+
+    <!-- Jobs -->
+    <section data-panel="jobs" hidden>
+      <div class="card">
+        <div class="row" style="margin-bottom:12px">
+          <h2 style="margin:0">Jobs</h2>
+          <span class="muted" id="j-auto"></span>
+          <span class="spacer"></span>
+          <select id="j-business" style="width:auto"></select>
+          <select id="j-status" style="width:auto">
+            <option value="">All statuses</option>
+            <option value="assigned,running">In agent inboxes</option>
+            <option value="queued,running,retrying">Running</option>
+            <option value="done">Done</option>
+            <option value="failed">Failed</option>
+          </select>
+          <button class="btn small" id="j-refresh">Refresh</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Status</th><th>Intern</th><th>Task</th><th>Business</th><th>Source</th><th>Started</th></tr></thead>
+          <tbody id="j-body"></tbody>
+        </table></div>
+        <p class="hint">Jobs are kept for 7 days. Results are always written to Notion as well.</p>
+      </div>
+    </section>
+
+    <!-- Agents -->
+    <section data-panel="agents" hidden>
+      <div class="card" style="margin-bottom:16px">
+        <h2>Onboard your agents</h2>
+        <p class="muted" style="margin:0">Give each intern its setup prompt once. <b>Connected</b> agents (anything that can make HTTP calls: custom GPTs with actions, Claude with tools, scripts) then work hands-free. They pull their inbox, read shared context, complete tasks, delegate to teammates and write to the log. If an agent can't make HTTP calls, give it the <b>Offline pack</b> instead and paste its results back below.</p>
+        <p class="hint">Delivery decides who does the work. <b>API</b>: this server calls the model itself. <b>Inbox</b>: the task waits for the external agent.</p>
+      </div>
+      <div class="grid cards" id="agent-cards"></div>
+      <div class="card" style="margin-top:16px">
+        <h2>Paste results from an offline agent</h2>
+        <p class="muted" style="margin-top:0">Paste the agent's reply. Every <code>=== RESULT &lt;task id&gt; === … === END ===</code> block is submitted to its task and written to Notion.</p>
+        <textarea id="paste-results" placeholder="=== RESULT 1f0c… ===&#10;Summary: …&#10;…&#10;=== END ==="></textarea>
+        <div class="row" style="margin-top:10px"><button class="btn primary" id="paste-submit">Submit results</button><span class="muted" id="paste-status"></span></div>
+      </div>
+    </section>
+
+    <!-- Directory -->
+    <section data-panel="directory" hidden>
+      <div class="row" style="margin-bottom:12px">
+        <p class="muted" style="margin:0;flex:1;min-width:240px">Each business has its own Notion HQ doc, brand rules and log. Every task, webhook and job belongs to exactly one business.</p>
+        <button class="btn" id="biz-add">Add business</button>
+      </div>
+      <div class="grid cards" id="biz-cards"></div>
+    </section>
+
+    <!-- HQ Context -->
+    <section data-panel="context" hidden>
+      <div class="card">
+        <div class="row" style="margin-bottom:12px">
+          <h2 style="margin:0">HQ Context · <span class="biz-name"></span></h2>
+          <span class="muted" id="c-meta"></span>
+          <span class="spacer"></span>
+          <button class="btn small" id="c-refresh">Refresh from Notion</button>
+        </div>
+        <div class="ctx">
+          <div class="ctx-list" id="c-list"></div>
+          <div><pre class="output" id="c-body"></pre></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Setup -->
+    <section data-panel="setup" hidden>
+      <div id="setup-body"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+</div>
+
+<dialog id="job-dialog">
+  <div class="dlg-head">
+    <span id="jd-status"></span>
+    <b id="jd-title" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>
+    <button class="btn small" id="jd-copy">Copy output</button>
+    <button class="btn small" id="jd-retry">Retry</button>
+    <button class="btn small ghost" id="jd-close" aria-label="Close">✕</button>
+  </div>
+  <div class="dlg-body" id="jd-body"></div>
+</dialog>
+
+<dialog id="biz-dialog">
+  <form id="biz-form">
+    <div class="dlg-head"><b id="bz-title" style="flex:1">Business</b><button type="button" class="btn small ghost" id="bz-close" aria-label="Close">✕</button></div>
+    <div class="dlg-body">
+      <div class="cols">
+        <label class="field"><span>Name</span><input id="bz-name" type="text" required maxlength="80" placeholder="SP International"></label>
+        <label class="field"><span>Id (used in URLs and Slack)</span><input id="bz-id" type="text" required pattern="[a-z0-9][a-z0-9-]{1,30}" placeholder="spinternational"></label>
+        <label class="field"><span>Domain</span><input id="bz-domain" type="text" maxlength="120" placeholder="spinternationalpvtltd.com"></label>
+        <label class="field"><span>Short names (comma separated)</span><input id="bz-aliases" type="text" placeholder="spi, sp"></label>
+      </div>
+      <label class="field"><span>One-line description (what the business does)</span><input id="bz-desc" type="text" maxlength="1000"></label>
+      <label class="field"><span>Notion HQ page (URL or id)</span><input id="bz-hq" type="text" maxlength="300" placeholder="https://www.notion.so/…"></label>
+      <label class="field"><span>Notion token secret (only if this HQ is in a different Notion workspace)</span><input id="bz-token" type="text" maxlength="64" placeholder="e.g. NOTION_TOKEN_SPI (leave empty to use NOTION_TOKEN)"></label>
+      <label class="field"><span>Fallback brand notes (used when the HQ doc has no Brand Rules)</span><textarea id="bz-brand" maxlength="4000" style="min-height:90px"></textarea></label>
+      <label class="field"><span>Never-use phrases (comma separated, checked in all copy)</span><input id="bz-forbid" type="text" placeholder="e.g. Fitness ID, Greater Noida"></label>
+      <label class="row" style="margin-bottom:14px"><input id="bz-default" type="checkbox"> <span class="muted">Default business (used when a task doesn't say which)</span></label>
+      <div id="bz-error" class="errbox" hidden></div>
+      <div class="row"><button class="btn primary" type="submit">Save</button><span class="spacer"></span><button type="button" class="btn danger" id="bz-delete">Remove business</button></div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="prompt-dialog">
+  <div class="dlg-head"><b id="pd-title" style="flex:1"></b><button class="btn small primary" id="pd-copy">Copy</button><button class="btn small ghost" id="pd-close" aria-label="Close">✕</button></div>
+  <div class="dlg-body"><pre class="output" id="pd-body"></pre></div>
+</dialog>
+
+<script nonce="__NONCE__">
+(() => {
+  "use strict";
+
+  // Storage can be unavailable (private mode, blocked site data): every access is guarded.
+  const KEY = "aihq.secret", BIZ_KEY = "aihq.business";
+  const safe = (fn, fallback) => { try { return fn(); } catch { return fallback; } };
+  const store = {
+    get: () => safe(() => sessionStorage.getItem(KEY) || localStorage.getItem(KEY), null),
+    set: (v, remember) => safe(() => (remember ? localStorage : sessionStorage).setItem(KEY, v)),
+    clear: () => safe(() => { sessionStorage.removeItem(KEY); localStorage.removeItem(KEY); }),
+  };
+  let secret = store.get();
+
+  // All dynamic text (titles, agent output, Notion content) goes through textContent.
+  const $ = (sel) => document.querySelector(sel);
+  function h(tag, attrs, ...children) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? "" : String(v));
+    }
+    for (const c of children.flat(3)) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    return el;
+  }
+  const ACTIVE = ["queued", "assigned", "running", "retrying"];
+  const statusClass = (s) => String(s || "").toLowerCase().replace(/[^a-z]/g, "");
+  const pill = (text, cls) => h("span", { class: "pill " + (cls != null ? cls : statusClass(text)) }, text || "—");
+  const emptyRow = (cols, text) => h("tr", {}, h("td", { colspan: cols, class: "empty" }, text));
+  function ago(iso) {
+    if (!iso) return "";
+    const s = Math.round((Date.now() - Date.parse(iso)) / 1000);
+    if (s < 60) return Math.max(s, 0) + "s ago";
+    if (s < 3600) return Math.round(s / 60) + "m ago";
+    if (s < 86400) return Math.round(s / 3600) + "h ago";
+    return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  }
+  let toastTimer;
+  function toast(msg, isErr) {
+    document.querySelectorAll(".toast").forEach((t) => t.remove());
+    const t = h("div", { class: "toast" + (isErr ? " err" : ""), role: "status" }, msg);
+    document.body.append(t);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.remove(), 4500);
+  }
+  async function copy(text, what) {
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const ta = h("textarea", { style: "position:fixed;opacity:0" }); ta.value = text; document.body.append(ta); ta.select();
+      const ok = safe(() => document.execCommand("copy"), false); ta.remove();
+      if (!ok) return toast("Couldn't copy. Select the text and copy it manually.", true);
+    }
+    toast((what || "Text") + " copied");
+  }
+  const copyBtn = (text, what) => h("button", { type: "button", class: "btn small", onclick: () => copy(text, what) }, "Copy");
+  const copyLine = (text, what) => h("div", { class: "copyline" }, h("code", {}, text), copyBtn(text, what));
+
+  class ApiError extends Error {
+    constructor(status, body) { super((body && body.error) || ("HTTP " + status)); this.status = status; this.body = body; }
+  }
+  async function api(path, opts = {}, as) {
+    const res = await fetch(path, { ...opts, headers: { "content-type": "application/json", ...(secret ? { authorization: "Bearer " + secret } : {}) } });
+    if (res.status === 401) { signOut("Wrong secret, or it has changed. Sign in again."); throw new ApiError(401, null); }
+    if (as === "text") { if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null)); return res.text(); }
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, body);
+    return body;
+  }
+  function errText(e) {
+    const d = e && e.body && e.body.details;
+    if (d && typeof d === "object" && !Array.isArray(d)) {
+      const parts = Object.entries(d).map(([k, v]) => k + ": " + (Array.isArray(v) ? v.join(", ") : JSON.stringify(v)));
+      if (parts.length) return e.message + " — " + parts.join("; ");
+    }
+    return e && e.message ? e.message : String(e);
+  }
+
+  let meta = null, health = null, context = null, jobs = [];
+  let currentTab = "overview", pollTimer = null, selectedOwner = null, selectedSection = null, openJobId = null;
+  let business = null; // currently selected business id
+  const bizById = (id) => meta.businesses.find((b) => b.id === id);
+  const bizName = (id) => (bizById(id) || { name: id || "—" }).name;
+
+  // ---------- auth ----------
+  function showLogin(msg) {
+    $("#app").hidden = true; $("#signout").hidden = true; $("#biz-switch").hidden = true; $("#login").hidden = false;
+    const e = $("#login-error"); e.hidden = !msg; e.textContent = msg || "";
+    $("#login-secret").focus();
+  }
+  function signOut(msg) { secret = null; store.clear(); stopPolling(); showLogin(msg); }
+  $("#signout").addEventListener("click", () => signOut());
+  $("#login-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    secret = $("#login-secret").value.trim();
+    try {
+      meta = await api("/api/meta");
+      store.set(secret, $("#login-remember").checked);
+      $("#login-secret").value = "";
+      start();
+    } catch (e) { if (e.status !== 401) showLogin(errText(e)); }
+  });
+
+  // ---------- business switcher ----------
+  function renderBusinessSelects() {
+    const opts = (sel, withAll) => {
+      const el = $(sel), prev = el.value;
+      el.replaceChildren(...(withAll ? [h("option", { value: "" }, "All businesses")] : []), ...meta.businesses.map((b) => h("option", { value: b.id }, b.name)));
+      if (prev && [...el.options].some((o) => o.value === prev)) el.value = prev;
+    };
+    if (!bizById(business)) business = safe(() => localStorage.getItem(BIZ_KEY), null);
+    if (!bizById(business)) business = meta.defaultBusiness;
+    opts("#biz-switch"); $("#biz-switch").value = business; $("#biz-switch").hidden = false;
+    opts("#d-business"); $("#d-business").value = business;
+    opts("#j-business", true);
+    document.querySelectorAll(".biz-name").forEach((el) => (el.textContent = bizName(business)));
+  }
+  $("#biz-switch").addEventListener("change", (ev) => {
+    business = ev.target.value;
+    safe(() => localStorage.setItem(BIZ_KEY, business));
+    context = null;
+    renderBusinessSelects();
+    setTab(currentTab);
+  });
+
+  // ---------- tabs ----------
+  const TABS = ["overview", "dispatch", "tasks", "jobs", "agents", "directory", "context", "setup"];
+  function setTab(name) {
+    currentTab = name;
+    stopPolling();
+    document.querySelectorAll("nav.tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+    document.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== name));
+    safe(() => history.replaceState(null, "", "#" + name));
+    ({ overview: loadOverview, tasks: () => loadTasks(false), jobs: () => loadJobs(false), agents: loadAgents,
+       directory: renderDirectory, context: () => loadContext(false), setup: loadSetup }[name] || (() => {}))();
+  }
+  document.querySelectorAll("nav.tabs button").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
+  document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.goto)));
+
+  async function loadHealth() {
+    health = await fetch("/health").then((r) => r.json()).catch(() => null);
+    const p = $("#health-pill");
+    p.className = "pill " + (health && health.ok ? "ok" : "bad");
+    p.textContent = health ? (health.ok ? "Healthy" : "Needs setup") : "Unreachable";
+  }
+
+  // ---------- overview ----------
+  async function loadOverview() {
+    await Promise.all([loadHealth(), loadJobs(true)]);
+    if (currentTab !== "overview") return;
+    const dayAgo = Date.now() - 86400000;
+    const recent = jobs.filter((j) => Date.parse(j.createdAt) > dayAgo);
+    const count = (s) => recent.filter((j) => j.status === s).length;
+    const stat = (value, label) => h("div", { class: "card stat" }, h("div", { class: "value" }, value), h("div", { class: "label" }, label));
+    $("#stats").replaceChildren(
+      stat(recent.length, "Delegated · last 24h"),
+      stat(count("done"), "Completed · last 24h"),
+      stat(count("failed"), "Failed · last 24h"),
+      stat(jobs.filter((j) => ["queued", "running", "retrying"].includes(j.status)).length, "Running now"),
+      stat(jobs.filter((j) => j.status === "assigned").length, "Waiting in agent inboxes"),
+    );
+    $("#recent-jobs").replaceChildren(jobs.length ? jobsTable(jobs.slice(0, 7)) : h("div", { class: "empty" }, "No jobs yet. Use Delegate to send the first one."));
+
+    const missing = (health && health.config && health.config.missingSecrets) || [];
+    const unconnected = meta.businesses.filter((b) => !b.hqPageId);
+    $("#setup-banner").replaceChildren(...(missing.length || unconnected.length ? [h("div", { class: "warnbox", style: "margin-bottom:16px" },
+      h("b", {}, "Finish setup: "),
+      missing.length ? "missing secrets " + missing.join(", ") + ". " : "",
+      unconnected.length ? unconnected.map((b) => b.name).join(", ") + " has no Notion HQ page yet. " : "",
+      h("a", { href: "#setup", onclick: (e) => { e.preventDefault(); setTab("setup"); } }, "Open Setup →"))] : []));
+
+    $("#biz-overview").replaceChildren(...meta.businesses.map((b) => {
+      const bj = jobs.filter((j) => j.business === b.id);
+      return h("div", { class: "row", style: "padding:10px 0;border-bottom:1px solid var(--border)" },
+        h("div", { style: "flex:1;min-width:0" }, h("b", {}, b.name), " ", h("span", { class: "muted" }, b.domain || ""),
+          h("div", { class: "muted", style: "font-size:12px" }, bj.length + " jobs this week · " + bj.filter((j) => j.status === "done").length + " done")),
+        b.hqPageId ? pill("HQ connected", "ok") : pill("No HQ page", "warn"),
+        h("button", { class: "btn small", onclick: () => { $("#d-business").value = b.id; setTab("dispatch"); } }, "Delegate"));
+    }));
+  }
+
+  // ---------- delegate ----------
+  function renderKinds() {
+    $("#d-kind").replaceChildren(...meta.kinds.map((k) => h("option", { value: k.key }, k.label + (k.owner ? " → " + k.owner : ""))));
+  }
+  $("#d-kind").addEventListener("change", () => {
+    const k = meta.kinds.find((x) => x.key === $("#d-kind").value);
+    if (k && k.owner) { selectedOwner = k.owner; renderOwners(); renderSections(true); }
+  });
+  function renderOwners() {
+    $("#owner-picker").replaceChildren(...meta.owners.map((o) =>
+      h("button", { type: "button", class: "owner", "aria-pressed": String(o.owner === selectedOwner), onclick: () => { selectedOwner = o.owner; renderOwners(); renderSections(true); } },
+        h("b", {}, o.owner, " ", h("span", { class: "muted", style: "font-weight:400;font-size:12px" }, "· " + (o.delivery === "inbox" ? "inbox" : o.provider === "xai" ? "Grok API" : "Claude API"))),
+        h("small", {}, o.role))));
+  }
+  function renderSections(resetToDefaults) {
+    const owner = meta.owners.find((o) => o.owner === selectedOwner);
+    const box = $("#d-sections");
+    const checked = resetToDefaults ? new Set(owner ? owner.defaultSections : []) : new Set([...box.querySelectorAll("input:checked")].map((i) => i.value));
+    const kind = meta.kinds.find((k) => k.key === $("#d-kind").value);
+    const copyTask = owner && owner.writesCopy;
+    box.replaceChildren(...meta.sections.map((s) => {
+      const locked = copyTask && s.key === "brand_rules";
+      return h("label", { class: "chip" + (locked ? " locked" : "") }, h("input", { type: "checkbox", value: s.key, checked: checked.has(s.key) || locked, disabled: locked }), s.title);
+    }));
+    $("#d-brand-hint").textContent = copyTask ? "Brand Rules are always included for " + owner.owner + "."
+      : "Brand Rules are added automatically for emails, posts and anything that reads like marketing" + (kind && kind.key !== "general" ? "." : " copy.");
+  }
+  $("#dispatch-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const err = $("#d-error"); err.hidden = true;
+    if (!selectedOwner) { err.textContent = "Pick an intern."; err.hidden = false; return; }
+    const wait = $("#d-wait").checked;
+    const body = {
+      business: $("#d-business").value, kind: $("#d-kind").value, owner: selectedOwner, task: $("#d-task").value.trim(),
+      context_sections: [...$("#d-sections").querySelectorAll("input:checked")].map((i) => i.value), async: !wait,
+    };
+    if ($("#d-delivery").value) body.delivery = $("#d-delivery").value;
+    if ($("#d-notion").value.trim()) body.notion_task_id = $("#d-notion").value.trim();
+    const btn = $("#d-submit");
+    btn.disabled = true; btn.textContent = wait ? "Working… (can take a few minutes)" : "Delegating…";
+    $("#d-result").replaceChildren(h("div", { class: "empty" }, wait ? selectedOwner + " is working on it…" : "Sending…"));
+    try {
+      const res = await api("/dispatch", { method: "POST", body: JSON.stringify(body) });
+      if (res.status === "done") { $("#d-result").replaceChildren(resultView(res)); return; }
+      const where = bizName(res.business);
+      $("#d-result").replaceChildren(
+        h("p", { style: "margin-top:0" }, pill(res.status), " ", h("b", {}, res.owner), " · " + where),
+        h("p", { class: "muted" }, res.status === "assigned"
+          ? "Waiting in " + res.owner + "'s inbox. The agent picks it up on its next check-in, or you can open the job and paste a result."
+          : "Queued. The result is written to " + where + "'s Notion when it's done."),
+        h("button", { type: "button", class: "btn small", onclick: () => openJob(res.id) }, "Open job"));
+      $("#d-task").value = ""; $("#d-notion").value = "";
+      toast("Delegated to " + res.owner);
+    } catch (e) {
+      err.textContent = errText(e); err.hidden = false;
+      $("#d-result").replaceChildren(h("div", { class: "empty" }, "Nothing was delegated."));
+    } finally { btn.disabled = false; btn.textContent = "Delegate"; }
+  });
+  function resultView(r) {
+    return h("div", {},
+      h("p", { style: "margin-top:0" }, h("b", {}, r.summary)),
+      (r.warnings || []).length ? h("div", { class: "warnbox" }, r.warnings.map((w) => h("div", {}, "⚠️ " + w))) : null,
+      h("pre", { class: "output" }, r.output),
+      h("p", { class: "hint" }, r.model + " · context: " + ((r.sectionsUsed || []).join(", ") || "—") + (r.brandSafety ? " · brand-checked" : "")));
+  }
+
+  // ---------- task board ----------
+  async function loadTasks(refresh) {
+    $("#t-body").replaceChildren(emptyRow(4, "Loading Task Board…"));
+    try { context = await api("/context?business=" + encodeURIComponent(business) + (refresh ? "&refresh=1" : "")); renderTasks(); }
+    catch (e) { $("#t-body").replaceChildren(emptyRow(4, "Couldn't load: " + errText(e))); }
+  }
+  function renderTasks() {
+    const filter = $("#t-filter").value;
+    const ai = new Set(meta.owners.map((o) => o.owner.toLowerCase()));
+    const all = context.tasks || [];
+    const tasks = all.filter((t) => !filter || (t.status || "") === filter);
+    if (!tasks.length) return $("#t-body").replaceChildren(emptyRow(4, all.length ? "No tasks with that status." : "No tasks found. Add an inline database under the Task Board heading in the HQ doc."));
+    $("#t-body").replaceChildren(...tasks.map((t) => {
+      const isAi = !!t.owner && ai.has(t.owner.toLowerCase());
+      const runnable = isAi && t.writable && !["in progress", "done"].includes((t.status || "").toLowerCase());
+      return h("tr", {},
+        h("td", { class: "task" }, t.url ? h("a", { href: t.url, target: "_blank", rel: "noopener" }, t.title) : t.title),
+        h("td", {}, t.owner || h("span", { class: "muted" }, "—")),
+        h("td", {}, pill(t.status || "—")),
+        h("td", { style: "text-align:right" }, runnable ? h("button", { class: "btn small primary", onclick: (ev) => runTask(t, ev.currentTarget) }, "Run")
+          : h("span", { class: "muted", style: "font-size:12px" }, !isAi ? (t.owner ? "Human" : "No owner") : !t.writable ? "read-only" : "")));
+    }));
+  }
+  async function runTask(t, btn) {
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const res = await api("/dispatch", { method: "POST", body: JSON.stringify({ business, task: t.title, owner: t.owner, notion_task_id: t.id, async: true }) });
+      toast(res.owner + (res.status === "assigned" ? " has it in their inbox: " : " is on it: ") + t.title);
+      t.status = "In progress"; renderTasks();
+    } catch (e) { toast(errText(e), true); btn.disabled = false; btn.textContent = "Run"; }
+  }
+  $("#t-filter").addEventListener("change", () => context && renderTasks());
+  $("#t-refresh").addEventListener("click", () => loadTasks(true));
+
+  // ---------- jobs ----------
+  async function loadJobs(quiet) {
+    const params = new URLSearchParams({ limit: "100" });
+    if (currentTab === "jobs") {
+      if ($("#j-business").value) params.set("business", $("#j-business").value);
+      if ($("#j-status").value) params.set("status", $("#j-status").value);
+    }
+    try { jobs = (await api("/api/jobs?" + params)).jobs || []; }
+    catch (e) { if (!quiet) $("#j-body").replaceChildren(emptyRow(6, "Couldn't load jobs: " + errText(e))); return; }
+    if (currentTab === "jobs") $("#j-body").replaceChildren(...(jobs.length ? jobRows(jobs, true) : [emptyRow(6, "No matching jobs in the last 7 days.")]));
+    schedulePoll();
+  }
+  function jobRows(list, full) {
+    return list.map((j) => h("tr", { class: "clickable", onclick: () => openJob(j.id), title: j.summary || j.error || "" },
+      h("td", {}, pill(j.status)),
+      h("td", {}, j.owner),
+      h("td", { class: "task" }, j.task, full && (j.error || j.summary) ? h("div", { class: "muted", style: "font-size:12px" }, j.error ? "⚠ " + j.error : j.summary) : null),
+      full ? h("td", { class: "muted" }, bizName(j.business)) : null,
+      full ? h("td", { class: "muted" }, j.source + (j.delivery === "inbox" ? " · inbox" : "")) : null,
+      h("td", { class: "muted", style: "white-space:nowrap" }, ago(j.createdAt))));
+  }
+  const jobsTable = (list) => h("div", { class: "table-wrap" }, h("table", {}, h("tbody", {}, jobRows(list, false))));
+  function schedulePoll() {
+    stopPolling();
+    const active = jobs.some((j) => ["queued", "running", "retrying"].includes(j.status));
+    $("#j-auto").textContent = active ? "· auto-refreshing" : "";
+    if (active && (currentTab === "jobs" || currentTab === "overview")) pollTimer = setTimeout(() => (currentTab === "overview" ? loadOverview() : loadJobs(true)), 8000);
+  }
+  function stopPolling() { clearTimeout(pollTimer); pollTimer = null; }
+  $("#j-refresh").addEventListener("click", () => loadJobs(false));
+  $("#j-business").addEventListener("change", () => loadJobs(false));
+  $("#j-status").addEventListener("change", () => loadJobs(false));
+
+  async function openJob(id) {
+    openJobId = id;
+    const dlg = $("#job-dialog");
+    $("#jd-title").textContent = "Loading…"; $("#jd-status").replaceChildren(pill("…"));
+    $("#jd-body").replaceChildren(h("div", { class: "empty" }, "Loading job…"));
+    $("#jd-retry").hidden = true; $("#jd-copy").hidden = true;
+    if (!dlg.open) dlg.showModal();
+    try {
+      const j = await api("/api/jobs/" + encodeURIComponent(id));
+      if (openJobId !== id) return;
+      const job = j.job || {}, r = j.result, src = job.source || {};
+      $("#jd-title").textContent = job.owner + " · " + job.task;
+      $("#jd-status").replaceChildren(pill(j.status || "queued"));
+      $("#jd-retry").hidden = !["done", "failed"].includes(j.status);
+      $("#jd-copy").hidden = !r;
+      const awaitingAgent = (job.delivery === "inbox") && ["assigned", "running"].includes(j.status);
+      $("#jd-body").replaceChildren(
+        j.error ? h("div", { class: "errbox" }, j.error) : null,
+        h("dl", { class: "kv" },
+          h("dt", {}, "Business"), h("dd", {}, bizName(job.business)),
+          h("dt", {}, "Type"), h("dd", {}, (meta.kinds.find((k) => k.key === job.kind) || { label: "General" }).label),
+          h("dt", {}, "Delivery"), h("dd", {}, job.delivery === "inbox" ? "Agent inbox" : "API"),
+          h("dt", {}, "Source"), h("dd", {}, src.kind || "—", src.by ? " · from " + src.by : "", src.url ? [" · ", h("a", { href: src.url, target: "_blank", rel: "noopener" }, src.repo || "link")] : null),
+          h("dt", {}, "Requested"), h("dd", {}, job.requestedAt ? new Date(job.requestedAt).toLocaleString() : "—"),
+          job.taskPageId ? [h("dt", {}, "Notion task"), h("dd", {}, h("a", { href: "https://www.notion.so/" + job.taskPageId.replace(/-/g, ""), target: "_blank", rel: "noopener" }, "Open in Notion"))] : null,
+          j.attempts ? [h("dt", {}, "Attempts"), h("dd", {}, j.attempts)] : null,
+          h("dt", {}, "Written back"), h("dd", {}, ["deliverable", "status", "log", "notify"].filter((k) => j.done && j.done[k]).join(", ") || "—"),
+          h("dt", {}, "Job id"), h("dd", { class: "mono" }, id)),
+        r ? resultView(r) : awaitingAgent ? submitForm(id, job.owner) : h("div", { class: "empty" }, ACTIVE.includes(j.status) ? "Still working…" : "No output."));
+      if (["queued", "running", "retrying"].includes(j.status) && !awaitingAgent) setTimeout(() => { if (dlg.open && openJobId === id) openJob(id); }, 6000);
+    } catch (e) { $("#jd-body").replaceChildren(h("div", { class: "errbox" }, errText(e))); }
+  }
+  function submitForm(id, owner) {
+    const ta = h("textarea", { placeholder: "Summary: …\n\nThe deliverable…" });
+    const btn = h("button", { class: "btn primary", onclick: async () => {
+      if (!ta.value.trim()) return toast("Paste the result first", true);
+      btn.disabled = true;
+      try { const r = await api("/api/jobs/" + encodeURIComponent(id) + "/complete", { method: "POST", body: JSON.stringify({ output: ta.value }) }); toast("Result saved to Notion" + (r.warnings.length ? " (with brand warnings)" : "")); openJob(id); loadJobs(true); }
+      catch (e) { toast(errText(e), true); btn.disabled = false; }
+    } }, "Submit result");
+    return h("div", {}, h("div", { class: "okbox" }, "Waiting for " + owner + ". If the agent worked offline, paste its answer here and it's written to Notion like any other result."), ta, h("div", { style: "margin-top:10px" }, btn));
+  }
+  $("#jd-close").addEventListener("click", () => $("#job-dialog").close());
+  $("#job-dialog").addEventListener("close", () => { openJobId = null; });
+  $("#jd-copy").addEventListener("click", () => { const pre = $("#jd-body pre.output"); copy(pre ? pre.textContent : "", "Output"); });
+  $("#jd-retry").addEventListener("click", async () => {
+    const btn = $("#jd-retry"); btn.disabled = true;
+    try { const res = await api("/api/jobs/" + encodeURIComponent(openJobId) + "/retry", { method: "POST" }); toast("Retry started"); loadJobs(true); openJob(res.id); }
+    catch (e) { toast(errText(e), true); } finally { btn.disabled = false; }
+  });
+
+  // ---------- agents ----------
+  async function loadAgents() {
+    $("#agent-cards").replaceChildren(h("div", { class: "empty" }, "Loading…"));
+    try {
+      const { agents } = await api("/api/agents");
+      $("#agent-cards").replaceChildren(...agents.map(agentCard));
+    } catch (e) { $("#agent-cards").replaceChildren(h("div", { class: "errbox" }, errText(e))); }
+  }
+  function agentCard(a) {
+    const masked = a.token.slice(0, 12) + "…" + a.token.slice(-4);
+    const seg = h("div", { class: "seg", role: "group", "aria-label": "Delivery" }, ["api", "inbox"].map((d) =>
+      h("button", { type: "button", "aria-pressed": String(a.delivery === d), onclick: () => setDelivery(a.owner, d) }, d === "api" ? "API" : "Inbox")));
+    return h("div", { class: "card" },
+      h("div", { class: "row", style: "margin-bottom:6px" }, h("h2", { style: "margin:0" }, a.owner), h("span", { class: "tag" }, a.provider === "xai" ? "Grok API" : "Claude API"),
+        h("span", { class: "spacer" }), a.inbox ? pill(a.inbox + " in inbox", "assigned") : null),
+      h("p", { class: "muted", style: "margin:0 0 12px;font-size:13px" }, a.role),
+      h("div", { class: "row", style: "margin-bottom:12px" }, h("span", { class: "label", style: "margin:0" }, "Delivery"), seg),
+      h("span", { class: "label" }, "Agent token"),
+      h("div", { class: "copyline" }, h("code", {}, masked), copyBtn(a.token, a.owner + "'s token")),
+      h("div", { class: "row", style: "margin-top:12px" },
+        h("button", { class: "btn primary small", onclick: () => showPrompt(a.owner, "connected") }, "Setup prompt"),
+        h("button", { class: "btn small", onclick: () => showPrompt(a.owner, "offline") }, "Offline pack")));
+  }
+  async function setDelivery(owner, delivery) {
+    try {
+      const config = await api("/api/config");
+      config.interns[owner] = { delivery };
+      await api("/api/config", { method: "PUT", body: JSON.stringify(config) });
+      meta = await api("/api/meta");
+      renderOwners();
+      toast(owner + " → " + (delivery === "api" ? "runs via API" : "works from its inbox"));
+      loadAgents();
+    } catch (e) { toast(errText(e), true); }
+  }
+  async function showPrompt(owner, variant) {
+    const dlg = $("#prompt-dialog");
+    $("#pd-title").textContent = owner + " · " + (variant === "offline" ? "Offline pack" : "Setup prompt (connected)");
+    $("#pd-body").textContent = "Generating…";
+    if (!dlg.open) dlg.showModal();
+    try { $("#pd-body").textContent = await api("/api/onboarding/" + owner + "?variant=" + variant, {}, "text"); }
+    catch (e) { $("#pd-body").textContent = "Couldn't generate: " + errText(e); }
+  }
+  $("#pd-copy").addEventListener("click", () => copy($("#pd-body").textContent, "Prompt"));
+  $("#pd-close").addEventListener("click", () => $("#prompt-dialog").close());
+  $("#paste-submit").addEventListener("click", async () => {
+    const text = $("#paste-results").value;
+    const blocks = [...text.matchAll(/===\s*RESULT\s+([0-9a-f-]{8,})\s*===\s*\n([\s\S]*?)\n?===\s*END\s*===/gi)];
+    const status = $("#paste-status");
+    if (!blocks.length) { status.textContent = "No RESULT blocks found."; return; }
+    let ok = 0; const errors = [];
+    for (const [, id, output] of blocks) {
+      try { await api("/api/jobs/" + encodeURIComponent(id) + "/complete", { method: "POST", body: JSON.stringify({ output: output.trim() }) }); ok++; }
+      catch (e) { errors.push(id.slice(0, 8) + ": " + errText(e)); }
+    }
+    status.textContent = ok + " of " + blocks.length + " saved to Notion." + (errors.length ? " Failed: " + errors.join("; ") : "");
+    if (!errors.length) $("#paste-results").value = "";
+    toast(ok + " result(s) submitted", !!errors.length);
+    loadAgents();
+  });
+
+  // ---------- directory ----------
+  function renderDirectory() {
+    $("#biz-cards").replaceChildren(...meta.businesses.map((b) => {
+      const test = h("div", {});
+      return h("div", { class: "card" },
+        h("div", { class: "row", style: "margin-bottom:4px" }, h("h2", { style: "margin:0" }, b.name), b.id === meta.defaultBusiness ? h("span", { class: "tag" }, "default") : null,
+          h("span", { class: "spacer" }), b.hqPageId ? pill("HQ connected", "ok") : pill("No HQ page", "warn")),
+        h("div", { class: "muted", style: "font-size:13px;margin-bottom:10px" }, (b.domain ? b.domain + " · " : "") + "id ", h("code", {}, b.id),
+          (b.aliases || []).length ? [" · also ", (b.aliases || []).map((a, i) => [i ? ", " : "", h("code", {}, a)])] : null),
+        b.description ? h("p", { style: "margin:0 0 10px" }, b.description) : h("p", { class: "muted", style: "margin:0 0 10px" }, "No description yet. Add one so agents know what this business does."),
+        b.forbiddenTerms.length ? h("div", { class: "hint", style: "margin-bottom:10px" }, "Never use: " + b.forbiddenTerms.join(", ")) : null,
+        test,
+        h("div", { class: "row" },
+          h("button", { class: "btn small", onclick: () => editBusiness(b.id) }, "Edit"),
+          b.hqPageId ? h("button", { class: "btn small", onclick: async (ev) => {
+            ev.currentTarget.disabled = true; test.replaceChildren(h("div", { class: "muted", style: "margin-bottom:10px" }, "Reading the HQ doc from Notion…"));
+            try {
+              const r = await api("/api/businesses/" + b.id + "/test", { method: "POST" });
+              test.replaceChildren(r.ok
+                ? h("div", { class: "okbox" }, "Connected to \"" + r.title + "\". Sections: " + (r.sections.join(", ") || "none") + ". " + r.tasks + " task(s)" + (r.taskBoardIsDatabase ? "" : " · Task Board is not a database, so it's read-only") + (r.warnings.length ? ". " + r.warnings.join(" ") : "."))
+                : h("div", { class: "errbox" }, r.error));
+            } catch (e) { test.replaceChildren(h("div", { class: "errbox" }, errText(e))); }
+            ev.currentTarget.disabled = false;
+          } }, "Test connection") : null,
+          b.hqPageId ? h("a", { class: "btn small", href: "https://www.notion.so/" + b.hqPageId.replace(/-/g, ""), target: "_blank", rel: "noopener" }, "Open HQ") : null));
+    }));
+  }
+  let editingId = null;
+  function editBusiness(id) {
+    editingId = id;
+    const b = id ? bizById(id) : { id: "", name: "", domain: "", aliases: [], description: "", hqPageId: "", notionTokenEnv: "", brandNotes: "", forbiddenTerms: [] };
+    $("#bz-title").textContent = id ? "Edit " + b.name : "Add business";
+    $("#bz-name").value = b.name; $("#bz-id").value = b.id; $("#bz-id").disabled = !!id;
+    $("#bz-domain").value = b.domain; $("#bz-aliases").value = (b.aliases || []).join(", "); $("#bz-desc").value = b.description; $("#bz-hq").value = b.hqPageId;
+    $("#bz-token").value = b.notionTokenEnv; $("#bz-brand").value = b.brandNotes; $("#bz-forbid").value = b.forbiddenTerms.join(", ");
+    $("#bz-default").checked = id ? meta.defaultBusiness === id : false;
+    $("#bz-delete").hidden = !id || meta.businesses.length < 2;
+    $("#bz-error").hidden = true;
+    $("#biz-dialog").showModal();
+  }
+  $("#bz-name").addEventListener("input", () => {
+    if (!editingId) $("#bz-id").value = $("#bz-name").value.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 31);
+  });
+  $("#biz-add").addEventListener("click", () => editBusiness(null));
+  $("#bz-close").addEventListener("click", () => $("#biz-dialog").close());
+  async function saveConfigWith(mutate) {
+    const config = await api("/api/config");
+    mutate(config);
+    await api("/api/config", { method: "PUT", body: JSON.stringify(config) });
+    meta = await api("/api/meta");
+    renderBusinessSelects();
+  }
+  $("#biz-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const entry = {
+      id: editingId || $("#bz-id").value.trim(), name: $("#bz-name").value.trim(), domain: $("#bz-domain").value.trim(),
+      aliases: $("#bz-aliases").value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+      description: $("#bz-desc").value.trim(), hqPageId: $("#bz-hq").value.trim(), notionTokenEnv: $("#bz-token").value.trim(),
+      brandNotes: $("#bz-brand").value.trim(), forbiddenTerms: $("#bz-forbid").value.split(",").map((s) => s.trim()).filter(Boolean),
+    };
+    try {
+      await saveConfigWith((config) => {
+        const i = config.businesses.findIndex((b) => b.id === entry.id);
+        if (!editingId && i >= 0) throw new Error("A business with id \"" + entry.id + "\" already exists");
+        if (i >= 0) config.businesses[i] = entry; else config.businesses.push(entry);
+        if ($("#bz-default").checked) config.defaultBusiness = entry.id;
+      });
+      $("#biz-dialog").close(); toast(entry.name + " saved"); renderDirectory();
+    } catch (e) { $("#bz-error").textContent = errText(e); $("#bz-error").hidden = false; }
+  });
+  $("#bz-delete").addEventListener("click", async () => {
+    const b = bizById(editingId);
+    if (!b || !confirm("Remove " + b.name + " from the directory? Its Notion HQ doc is not touched.")) return;
+    try {
+      await saveConfigWith((config) => {
+        config.businesses = config.businesses.filter((x) => x.id !== b.id);
+        if (config.defaultBusiness === b.id) config.defaultBusiness = config.businesses[0].id;
+      });
+      $("#biz-dialog").close(); toast(b.name + " removed"); renderDirectory();
+    } catch (e) { $("#bz-error").textContent = errText(e); $("#bz-error").hidden = false; }
+  });
+
+  // ---------- context ----------
+  async function loadContext(refresh) {
+    $("#c-body").textContent = "Loading…"; $("#c-list").replaceChildren(); $("#c-meta").textContent = "";
+    try {
+      context = await api("/context?business=" + encodeURIComponent(business) + (refresh ? "&refresh=1" : ""));
+      if (refresh) toast("Refreshed from Notion");
+      renderContext();
+    } catch (e) { $("#c-body").textContent = "Couldn't load: " + errText(e); }
+  }
+  function renderContext() {
+    $("#c-meta").textContent = "· fetched " + ago(context.fetchedAt) + " · cache " + context.cache;
+    const keys = meta.sections.map((s) => s.key);
+    if (!keys.includes(selectedSection)) selectedSection = keys[0];
+    $("#c-list").replaceChildren(...meta.sections.map((s) => h("button", { "aria-selected": String(s.key === selectedSection), onclick: () => { selectedSection = s.key; renderContext(); } },
+      s.title, context.sections && context.sections[s.key] ? null : h("span", { class: "muted", style: "font-size:11px" }, " · missing"))));
+    const sec = context.sections && context.sections[selectedSection];
+    const title = meta.sections.find((s) => s.key === selectedSection).title;
+    $("#c-body").textContent = sec ? (sec.markdown || "(empty section)") : "This section wasn't found in the HQ doc. Add a heading named \"" + title + "\".";
+  }
+  $("#c-refresh").addEventListener("click", () => loadContext(true));
+
+  // ---------- setup ----------
+  async function loadSetup() {
+    const box = $("#setup-body");
+    try {
+      const s = await api("/api/setup");
+      const secretRows = s.secrets.map((x) => h("tr", {},
+        h("td", {}, h("code", {}, x.name), x.required ? h("div", { class: "hint" }, "required") : null),
+        h("td", {}, x.set ? pill("Set", "ok") : pill(x.required ? "Missing" : "Not set", x.required ? "bad" : "")),
+        h("td", {}, x.purpose, h("div", { class: "hint" }, x.where)),
+        h("td", { style: "text-align:right" }, copyBtn("npx wrangler secret put " + x.name, "Command"))));
+      const sections = [
+        h("div", { class: "card" },
+          h("h2", {}, "1 · Secrets"),
+          h("p", { class: "muted", style: "margin-top:0" }, "Run these in the repo (logged in with ", h("code", {}, "npx wrangler login"), "). Each command prompts for the value; secrets take effect immediately, no redeploy needed."),
+          h("div", { class: "table-wrap" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Status"), h("th", {}, "What it's for / where to get it"), h("th", {}))), h("tbody", {}, secretRows))),
+          h("h3", {}, "Bindings & settings"),
+          h("dl", { class: "kv" },
+            h("dt", {}, "KV · HQ_CACHE"), h("dd", {}, s.bindings.HQ_CACHE ? pill("Bound", "ok") : pill("Missing", "bad")),
+            h("dt", {}, "Queue · DISPATCH_QUEUE"), h("dd", {}, s.bindings.DISPATCH_QUEUE ? pill("Bound", "ok") : pill("Missing", "bad")),
+            Object.entries(s.vars).map(([k, v]) => [h("dt", {}, k), h("dd", {}, h("code", {}, v))])),
+          h("p", { class: "hint" }, "Vars live in wrangler.jsonc → vars. Change them there and push to redeploy.")),
+        h("div", { class: "card" },
+          h("h2", {}, "2 · Notion"),
+          h("p", { class: "muted", style: "margin-top:0" }, "For each business: share its HQ page with the integration (••• → Connections), then on its Task Board database add an automation: when Status is set to In progress → Send webhook."),
+          s.businesses.map((b) => h("div", { style: "margin-bottom:14px" },
+            h("div", { class: "row", style: "margin-bottom:6px" }, h("b", {}, b.name), b.connected ? pill("HQ connected", "ok") : pill("Set its HQ page in Directory", "warn")),
+            copyLine(b.webhooks.notion, b.name + " Notion webhook URL"))),
+          h("span", { class: "label" }, "Custom header to add in each automation"),
+          copyLine("X-Webhook-Secret: <your WEBHOOK_SECRET>", "Header"),
+          h("p", { class: "hint" }, "Optional \"Type\" select on the Task Board (Email, Research, Social post, Marketing copy, Code / technical, Doc / plan) sets the task type automatically.")),
+        h("div", { class: "card" },
+          h("h2", {}, "3 · Slack"),
+          h("p", { class: "muted", style: "margin-top:0" }, "api.slack.com/apps → your app → Slash Commands → ", h("code", {}, "/intern"), ". Use the same URL for Event Subscriptions (bot event app_mention)."),
+          copyLine(s.slack.url, "Slack URL"),
+          h("p", { class: "hint" }, "Usage: /intern [business] <intern or task type> <task>, e.g. /intern spi email follow up with the distributor")),
+        h("div", { class: "card" },
+          h("h2", {}, "4 · GitHub"),
+          h("p", { class: "muted", style: "margin-top:0" }, "Repo → Settings → Webhooks. Content type application/json, secret = GITHUB_WEBHOOK_SECRET (or WEBHOOK_SECRET), events: Issues, Pull requests, Pushes. Label issues ai:code / ai:pro / ai:grok / ai:muse to delegate."),
+          s.businesses.map((b) => h("div", {}, h("span", { class: "label" }, b.name), copyLine(b.webhooks.github, b.name + " GitHub webhook URL")))),
+        h("div", { class: "card" },
+          h("h2", {}, "5 · Agents"),
+          h("p", { class: "muted", style: "margin:0" }, "Open the Agents tab, pick each intern's delivery (API or Inbox), and paste its Setup prompt into the agent (Grok, a Claude project, a custom GPT…). The prompt contains its own scoped token.")),
+        h("div", { class: "card" },
+          h("h2", {}, "All endpoints"),
+          h("p", { class: "muted", style: "margin-top:0" }, "Worker URL ", h("code", {}, s.workerUrl)),
+          h("div", { class: "table-wrap" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Method"), h("th", {}, "Path"), h("th", {}, "Auth"), h("th", {}, "Purpose"))),
+            h("tbody", {}, s.endpoints.map((e) => h("tr", {}, h("td", { class: "mono" }, e.method), h("td", {}, h("code", {}, e.path)), h("td", { class: "muted" }, e.auth), h("td", {}, e.purpose))))))),
+      ];
+      box.replaceChildren(h("div", { class: "grid" }, sections));
+    } catch (e) { box.replaceChildren(h("div", { class: "errbox" }, errText(e))); }
+  }
+
+  // ---------- boot ----------
+  function start() {
+    $("#login").hidden = true; $("#app").hidden = false; $("#signout").hidden = false;
+    renderBusinessSelects(); renderKinds();
+    selectedOwner = selectedOwner || (meta.owners[0] && meta.owners[0].owner);
+    renderOwners(); renderSections(true);
+    const fromHash = (location.hash || "").slice(1);
+    setTab(TABS.includes(fromHash) ? fromHash : "overview");
+  }
+
+  loadHealth();
+  if (!secret) { showLogin(); return; }
+  api("/api/meta").then((m) => { meta = m; start(); }).catch((e) => { if (e.status !== 401) showLogin(errText(e)); });
+})();
+</script>
+</body>
+</html>

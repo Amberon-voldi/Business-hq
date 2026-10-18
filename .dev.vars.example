@@ -1,12 +1,13 @@
 # Copy to .dev.vars for `wrangler dev`. Never commit the real file.
-NOTION_TOKEN=ntn_xxx
-NOTION_HQ_PAGE_ID=00000000000000000000000000000000
-ANTHROPIC_API_KEY=sk-ant-xxx
 WEBHOOK_SECRET=change-me-long-random-string
+NOTION_TOKEN=ntn_xxx
+ANTHROPIC_API_KEY=sk-ant-xxx
 
 # Optional
+NOTION_HQ_PAGE_ID=
 XAI_API_KEY=
-GITHUB_WEBHOOK_SECRET=
 SLACK_SIGNING_SECRET=
 SLACK_BOT_TOKEN=
+GITHUB_WEBHOOK_SECRET=
 NOTION_WEBHOOK_VERIFICATION_TOKEN=
+# NOTION_TOKEN_SPI=   # only if SP International's HQ is in another Notion workspace

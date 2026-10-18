@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { type Owner, parseOwner } from "../agents/registry";
-import { enqueueDispatch } from "../dispatch/queue";
+import type { Business } from "../config/store";
+import { startDispatch } from "../dispatch/start";
 import type { DispatchJob } from "../dispatch/types";
 import type { AppBindings, Env } from "../env";
 import { verifyGitHubSignature } from "../lib/crypto";
@@ -10,6 +11,7 @@ import { log } from "../lib/logger";
 import { formatLogTimestamp } from "../lib/time";
 import { createNotion } from "../notion/client";
 import { appendLogEntry } from "../notion/writeback";
+import { businessFromRef } from "./util";
 
 export const githubWebhook = new Hono<AppBindings>();
 
@@ -62,6 +64,8 @@ githubWebhook.post("/", async (c) => {
     throw new HttpError(400, "Body must be JSON");
   }
   const repo = payload.repository?.full_name ?? "unknown/repo";
+  // One webhook per repo; ?business=<id> in its URL says which business the repo belongs to.
+  const business = await businessFromRef(c.env, c.req.query("business"));
 
   // Pushes to the default branch are recorded in the HQ Log (no AI involved).
   if (event === "push") {
@@ -72,7 +76,7 @@ githubWebhook.post("/", async (c) => {
     const commits = payload.commits ?? [];
     const head = commits.at(-1)?.message.split("\n")[0] ?? "";
     c.executionCtx.waitUntil(
-      logEvent(c.env, `${repo}@${branch}`, `${commits.length} commit(s) by ${payload.pusher?.name ?? "someone"}: ${head}`, payload.compare),
+      logEvent(c.env, business, `${repo}@${branch}`, `${commits.length} commit(s) by ${payload.pusher?.name ?? "someone"}: ${head}`, payload.compare),
     );
     return c.json({ status: "logged" });
   }
@@ -90,6 +94,7 @@ githubWebhook.post("/", async (c) => {
     const kind = event === "issues" ? "issue" : "pull request";
     const job: DispatchJob = {
       id: crypto.randomUUID(),
+      business: business.id,
       task: `GitHub ${kind} #${item.number} in ${repo}: ${item.title}`,
       owner,
       details: {
@@ -98,16 +103,17 @@ githubWebhook.post("/", async (c) => {
       source: { kind: "github", repo, url: item.html_url, event },
       requestedAt: new Date().toISOString(),
     };
-    await enqueueDispatch(c.env, job);
-    return c.json({ status: "queued", id: job.id, owner }, 202);
+    const outcome = await startDispatch(c.env, job, { async: true });
+    return c.json({ status: outcome.mode, id: job.id, owner, business: business.id }, 202);
   }
 
   return c.json({ status: "ignored", reason: `event ${event} not handled` });
 });
 
-async function logEvent(env: Env, where: string, summary: string, url?: string): Promise<void> {
+async function logEvent(env: Env, business: Business, where: string, summary: string, url?: string): Promise<void> {
+  if (!business.hqPageId) return;
   try {
-    await appendLogEntry(createNotion(env), env.NOTION_HQ_PAGE_ID, {
+    await appendLogEntry(createNotion(env, business), business.hqPageId, {
       timestamp: formatLogTimestamp(new Date(), Number(env.LOG_TIMEZONE_OFFSET_MINUTES) || 0),
       agent: "GitHub",
       task: where,

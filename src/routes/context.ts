@@ -4,6 +4,7 @@ import { HttpError } from "../lib/errors";
 import { getHqContext } from "../notion/hq";
 import { CONTEXT_SECTION_KEYS, type ContextSectionKey, type HqSection } from "../notion/types";
 import { requireSharedSecret } from "./auth";
+import { businessFromRef } from "./util";
 
 export const contextRoutes = new Hono<AppBindings>();
 
@@ -12,6 +13,7 @@ export const contextRoutes = new Hono<AppBindings>();
  * GET /context?sections=a,b          only those sections
  * GET /context?refresh=1             bypass the 5-min cache
  * GET /context?format=markdown       one Markdown document (handy for pasting into an agent)
+ * GET /context?business=spinternational   another business from the directory (default: the default business)
  */
 contextRoutes.get("/", requireSharedSecret, async (c) => {
   const requested = c.req.query("sections")?.split(",").map((s) => s.trim()).filter(Boolean);
@@ -22,7 +24,8 @@ contextRoutes.get("/", requireSharedSecret, async (c) => {
   const keys = (requested?.length ? requested : CONTEXT_SECTION_KEYS) as ContextSectionKey[];
   const refresh = ["1", "true"].includes(c.req.query("refresh") ?? "");
 
-  const { context, cache } = await getHqContext(c.env, { forceRefresh: refresh });
+  const business = await businessFromRef(c.env, c.req.query("business"));
+  const { context, cache } = await getHqContext(c.env, business, { forceRefresh: refresh });
   c.header("X-Cache", cache.toUpperCase());
 
   const sections: Partial<Record<ContextSectionKey, Omit<HqSection, "appendTarget" | "key">>> = {};
@@ -39,6 +42,7 @@ contextRoutes.get("/", requireSharedSecret, async (c) => {
   }
 
   return c.json({
+    business: { id: business.id, name: business.name, domain: business.domain },
     pageId: context.pageId,
     title: context.title,
     fetchedAt: context.fetchedAt,

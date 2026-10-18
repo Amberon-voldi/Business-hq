@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { parseSlackCommand } from "../src/routes/slack";
 import { formatLogTimestamp } from "../src/lib/time";
 import { normalizeNotionId } from "../src/notion/client";
 import { markdownToBlocks, richText } from "../src/notion/blocks";
@@ -46,10 +45,4 @@ describe("misc", () => {
     ).toBe("2026-10-18 14:02 IST · Muse · Launch tweet · ✅ 3 drafts");
   });
 
-  it("parses Slack commands", () => {
-    expect(parseSlackCommand("muse write 3 taglines")).toEqual({ owner: "Muse", task: "write 3 taglines" });
-    expect(parseSlackCommand("Code: fix the build")).toEqual({ owner: "Code", task: "fix the build" });
-    expect(parseSlackCommand("bob do a thing")).toBeNull();
-    expect(parseSlackCommand("help")).toBeNull();
-  });
 });

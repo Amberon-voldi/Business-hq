@@ -1,32 +1,29 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { OWNERS, parseOwner } from "../agents/registry";
-import { enqueueDispatch } from "../dispatch/queue";
-import { activeTaskKey, markTaskActive, reportFailure, runDispatch } from "../dispatch/run";
+import { OWNERS, TASK_KINDS, TASK_KIND_KEYS, type TaskKind, parseOwner } from "../agents/registry";
+import { DELIVERY } from "../config/store";
+import { startDispatch } from "../dispatch/start";
 import type { DispatchJob } from "../dispatch/types";
 import type { AppBindings } from "../env";
-import { DispatchError, HttpError } from "../lib/errors";
-import { createNotion, normalizeNotionId } from "../notion/client";
-import { CONTEXT_SECTION_KEYS } from "../notion/types";
-import { updateTaskStatus } from "../notion/writeback";
+import { HttpError } from "../lib/errors";
+import { normalizeNotionId } from "../notion/client";
+import { CONTEXT_SECTION_KEYS, type ContextSectionKey } from "../notion/types";
 import { requireSharedSecret } from "./auth";
+import { businessFromRef } from "./util";
 
-const DispatchBody = z.object({
+export const DispatchBody = z.object({
   task: z.string().trim().min(1, "task is required").max(20_000),
-  owner: z
-    .string()
-    .transform((v, ctx) => {
-      const owner = parseOwner(v);
-      if (!owner) {
-        ctx.addIssue({ code: "custom", message: `owner must be one of ${OWNERS.join("|")}` });
-        return z.NEVER;
-      }
-      return owner;
-    }),
-  context_sections: z.array(z.enum(CONTEXT_SECTION_KEYS as [string, ...string[]])).optional(),
+  /** Optional when `kind` implies an intern (email → Pro, social → Grok…). */
+  owner: z.string().optional(),
+  /** Business id/name/domain from the directory; defaults to the default business. */
+  business: z.string().optional(),
+  kind: z.enum(TASK_KIND_KEYS as [TaskKind, ...TaskKind[]]).default("general"),
+  context_sections: z.array(z.enum(CONTEXT_SECTION_KEYS as [ContextSectionKey, ...ContextSectionKey[]])).optional(),
   /** Optional Task Board row to update with status + deliverable. */
   notion_task_id: z.string().optional(),
-  /** false = run inline and return the result in the response (slow; up to minutes). */
+  /** Override the intern's configured delivery: "api" (worker runs it) or "inbox" (external agent). */
+  delivery: z.enum(DELIVERY).optional(),
+  /** false = run inline and return the result (api delivery only; can take minutes). */
   async: z.boolean().default(true),
 });
 
@@ -40,6 +37,14 @@ dispatchRoutes.post("/", requireSharedSecret, async (c) => {
   if (!parsed.success) throw new HttpError(422, "Invalid dispatch request", z.flattenError(parsed.error).fieldErrors);
   const body = parsed.data;
 
+  const owner = parseOwner(body.owner) ?? (body.owner ? null : TASK_KINDS[body.kind].owner);
+  if (!owner) {
+    throw new HttpError(422, "Invalid dispatch request", {
+      owner: [`owner must be one of ${OWNERS.join("|")} (or set a kind that implies one)`],
+    });
+  }
+  const business = await businessFromRef(c.env, body.business);
+
   let taskPageId: string | undefined;
   if (body.notion_task_id) {
     try {
@@ -51,42 +56,21 @@ dispatchRoutes.post("/", requireSharedSecret, async (c) => {
 
   const job: DispatchJob = {
     id: crypto.randomUUID(),
+    business: business.id,
     task: body.task,
-    owner: body.owner,
-    ...(body.context_sections ? { contextSections: body.context_sections as DispatchJob["contextSections"] } : {}),
+    owner,
+    kind: body.kind,
+    ...(body.delivery ? { delivery: body.delivery } : {}),
+    ...(body.context_sections ? { contextSections: body.context_sections } : {}),
     ...(taskPageId ? { taskPageId } : {}),
     source: { kind: "manual" },
     requestedAt: new Date().toISOString(),
   };
 
-  if (taskPageId) {
-    if (!(await markTaskActive(c.env, taskPageId, job.id))) {
-      throw new HttpError(409, "That task already has a dispatch in progress");
-    }
-    try {
-      await updateTaskStatus(createNotion(c.env), taskPageId, "In progress");
-    } catch (err) {
-      await c.env.HQ_CACHE.delete(activeTaskKey(taskPageId));
-      throw new HttpError(502, `Could not update the Notion task: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  if (body.async) {
-    try {
-      await enqueueDispatch(c.env, job);
-    } catch (err) {
-      if (taskPageId) await c.env.HQ_CACHE.delete(activeTaskKey(taskPageId));
-      throw err;
-    }
-    return c.json({ id: job.id, status: "queued", owner: job.owner }, 202);
-  }
-
-  try {
-    const result = await runDispatch(c.env, job);
-    return c.json({ status: "done", ...result });
-  } catch (err) {
-    await reportFailure(c.env, job, err);
-    const status = err instanceof DispatchError && err.retryable ? 503 : 502;
-    throw new HttpError(status, err instanceof Error ? err.message : "Dispatch failed", { id: job.id });
-  }
+  const outcome = await startDispatch(c.env, job, { async: body.async });
+  if (outcome.mode === "done") return c.json({ status: "done", business: business.id, ...outcome.result });
+  return c.json(
+    { id: job.id, status: outcome.mode, owner, business: business.id, kind: body.kind, delivery: job.delivery },
+    202,
+  );
 });

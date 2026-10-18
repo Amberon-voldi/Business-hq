@@ -7,8 +7,9 @@ import {
   isFullPage,
   isNotionClientError,
 } from "@notionhq/client";
+import type { Business } from "../config/store";
 import type { Env } from "../env";
-import { errorMessage } from "../lib/errors";
+import { HttpError, errorMessage } from "../lib/errors";
 import { log } from "../lib/logger";
 import { createNotion, normalizeNotionId } from "./client";
 import { type BlockNode, parseSections, tasksFromTable } from "./parse";
@@ -28,8 +29,16 @@ export interface LoadedContext {
   cache: CacheStatus;
 }
 
-function cacheKey(env: Env): string {
-  return CACHE_KEY_PREFIX + normalizeNotionId(env.NOTION_HQ_PAGE_ID);
+/** The business's HQ page id, or a 409 telling the admin to connect one in the panel. */
+export function hqPageIdOf(business: Business): string {
+  if (!business.hqPageId) {
+    throw new HttpError(409, `${business.name} has no Notion HQ page yet. Add one in the panel's Directory tab.`);
+  }
+  return normalizeNotionId(business.hqPageId);
+}
+
+function cacheKey(business: Business): string {
+  return CACHE_KEY_PREFIX + hqPageIdOf(business);
 }
 
 function ttlSeconds(env: Env): number {
@@ -41,8 +50,12 @@ function ttlSeconds(env: Env): number {
  * Returns the parsed HQ doc, served from KV when younger than the TTL (default 5 min).
  * If Notion is unreachable, falls back to the last good copy (up to 24h old).
  */
-export async function getHqContext(env: Env, opts: { forceRefresh?: boolean } = {}): Promise<LoadedContext> {
-  const key = cacheKey(env);
+export async function getHqContext(
+  env: Env,
+  business: Business,
+  opts: { forceRefresh?: boolean } = {},
+): Promise<LoadedContext> {
+  const key = cacheKey(business);
   const cached = await env.HQ_CACHE.get<HqContext>(key, "json").catch((err: unknown) => {
     log("warn", "kv_read_failed", { error: errorMessage(err) });
     return null;
@@ -54,7 +67,7 @@ export async function getHqContext(env: Env, opts: { forceRefresh?: boolean } = 
   }
 
   try {
-    const context = await fetchHqContext(env);
+    const context = await fetchHqContext(env, business);
     await env.HQ_CACHE.put(key, JSON.stringify(context), { expirationTtl: STALE_RETENTION_SECONDS }).catch(
       (err: unknown) => log("warn", "kv_write_failed", { error: errorMessage(err) }),
     );
@@ -68,12 +81,30 @@ export async function getHqContext(env: Env, opts: { forceRefresh?: boolean } = 
   }
 }
 
-export async function invalidateHqContext(env: Env): Promise<void> {
-  await env.HQ_CACHE.delete(cacheKey(env));
+/** Stand-in when a business has no HQ doc yet: agents work from the directory entry alone. */
+export function emptyHqContext(business: Business): HqContext {
+  return {
+    businessId: business.id,
+    pageId: "",
+    title: business.name,
+    fetchedAt: new Date().toISOString(),
+    sections: {},
+    tasks: [],
+    taskDataSourceId: null,
+    warnings: [`${business.name} has no Notion HQ page connected`],
+  };
 }
 
-export async function fetchHqContext(env: Env, notion: Client = createNotion(env)): Promise<HqContext> {
-  const pageId = normalizeNotionId(env.NOTION_HQ_PAGE_ID);
+export async function invalidateHqContext(env: Env, business: Business): Promise<void> {
+  if (business.hqPageId) await env.HQ_CACHE.delete(cacheKey(business));
+}
+
+export async function fetchHqContext(
+  env: Env,
+  business: Business,
+  notion: Client = createNotion(env, business),
+): Promise<HqContext> {
+  const pageId = hqPageIdOf(business);
   const page = await notion.pages.retrieve({ page_id: pageId });
   const title = isFullPage(page)
     ? Object.values(page.properties)
@@ -104,7 +135,7 @@ export async function fetchHqContext(env: Env, notion: Client = createNotion(env
     for (const table of sections.task_board?.tables ?? []) tasks = tasks.concat(tasksFromTable(table));
   }
 
-  return { pageId, title, fetchedAt: new Date().toISOString(), sections, tasks, taskDataSourceId, warnings };
+  return { businessId: business.id, pageId, title, fetchedAt: new Date().toISOString(), sections, tasks, taskDataSourceId, warnings };
 }
 
 async function fetchBlockTree(notion: Client, blockId: string, depth: number): Promise<BlockNode[]> {

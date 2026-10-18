@@ -1,8 +1,9 @@
+import type { Business } from "../config/store";
 import { CONTEXT_SECTION_KEYS, type ContextSectionKey, type HqContext, type HqTable } from "../notion/types";
-import { BRAND_BASELINE, isCopyTask } from "./brand";
-import { AGENTS, type Owner } from "./registry";
+import { isCopyTask } from "./brand";
+import { AGENTS, OWNERS, type Owner, TASK_KINDS, type TaskKind } from "./registry";
 
-const SECTION_TITLES: Record<ContextSectionKey, string> = {
+export const SECTION_TITLES: Record<ContextSectionKey, string> = {
   product_brief: "Product Brief",
   brand_rules: "Brand Rules",
   tech_stack: "Tech Stack",
@@ -14,6 +15,8 @@ const SECTION_TITLES: Record<ContextSectionKey, string> = {
 export interface PromptInput {
   owner: Owner;
   task: string;
+  kind?: TaskKind | undefined;
+  business: Business;
   context: HqContext;
   requestedSections?: ContextSectionKey[] | undefined;
   /** Extra task details (Notion row properties, page notes, GitHub issue body…). */
@@ -28,25 +31,26 @@ export interface BuiltPrompt {
 }
 
 /**
- * Scoped context: only the sections the agent needs. Brand Rules are forced in for
+ * Scoped context: only the sections the intern needs. Brand Rules are forced in for
  * any copy/marketing task, whatever the caller asked for.
  */
 export function resolveSections(
   owner: Owner,
   task: string,
   requested?: ContextSectionKey[],
+  kind: TaskKind = "general",
 ): { sections: ContextSectionKey[]; brandSafety: boolean } {
   const base = requested && requested.length > 0 ? requested : AGENTS[owner].defaultSections;
-  const brandSafety = isCopyTask(task, owner);
+  const brandSafety = isCopyTask(task, owner, kind);
   const set = new Set(base);
   if (brandSafety) set.add("brand_rules");
   // Stable order keeps the system prompt byte-identical across calls (prompt caching).
   return { sections: CONTEXT_SECTION_KEYS.filter((k) => set.has(k)), brandSafety };
 }
 
-/** Role text from the HQ "AI Interns" table, if a row names this owner. */
-export function roleFromInternsTable(context: HqContext, owner: Owner): string | null {
-  for (const table of context.sections.ai_interns?.tables ?? []) {
+/** Role text from the business's "AI Interns" table, if a row names this intern. */
+export function roleFromInternsTable(context: HqContext | null, owner: Owner): string | null {
+  for (const table of context?.sections.ai_interns?.tables ?? []) {
     for (const row of table.rows) {
       const idx = row.findIndex((cell) => cell.trim().toLowerCase() === owner.toLowerCase());
       if (idx < 0) continue;
@@ -60,35 +64,51 @@ export function roleFromInternsTable(context: HqContext, owner: Owner): string |
   return null;
 }
 
-export function buildPrompt(input: PromptInput): BuiltPrompt {
-  const { owner, task, context } = input;
-  const { sections, brandSafety } = resolveSections(owner, task, input.requestedSections);
-  const role = roleFromInternsTable(context, owner) ?? AGENTS[owner].role;
+export function businessLine(b: Business): string {
+  const domain = b.domain && b.domain !== b.name ? ` (${b.domain})` : "";
+  return `${b.name}${domain}${b.description ? ` — ${b.description}` : ""}`;
+}
 
+/** Renders scoped HQ sections as tagged blocks; used by the worker and by agent briefings. */
+export function renderSections(business: Business, context: HqContext | null, sections: ContextSectionKey[]): string {
   const blocks: string[] = [];
   for (const key of sections) {
-    const section = context.sections[key];
-    let body = section?.markdown?.trim() ?? "";
-    if (key === "brand_rules" && !body) body = BRAND_BASELINE;
-    if (key === "task_board" && context.tasks.length > 0) body = renderTasks(context) + (body ? `\n\n${body}` : "");
+    let body = context?.sections[key]?.markdown?.trim() ?? "";
+    if (key === "brand_rules" && !body) body = business.brandNotes;
+    if (key === "brand_rules" && business.forbiddenTerms.length) {
+      body += `${body ? "\n" : ""}- Never use: ${business.forbiddenTerms.map((t) => `"${t}"`).join(", ")}.`;
+    }
+    if (key === "task_board" && context && context.tasks.length > 0) body = renderTasks(context) + (body ? `\n\n${body}` : "");
     if (!body) continue;
-    blocks.push(`<section name="${SECTION_TITLES[key]}">\n${body}\n</section>`);
+    blocks.push(`<section business="${business.name}" name="${SECTION_TITLES[key]}">\n${body}\n</section>`);
   }
+  return blocks.join("\n\n");
+}
+
+export function buildPrompt(input: PromptInput): BuiltPrompt {
+  const { owner, task, context, business } = input;
+  const kind = input.kind ?? "general";
+  const { sections, brandSafety } = resolveSections(owner, task, input.requestedSections, kind);
+  const role = roleFromInternsTable(context, owner) ?? AGENTS[owner].role;
+  const teammates = OWNERS.filter((o) => o !== owner)
+    .map((o) => `${o} (${AGENTS[o].role.split(".")[0]})`)
+    .join(", ");
 
   const system = [
-    `You are "${owner}", one of the AI Interns working for noida.fit — a city-first fitness discovery platform for Delhi-NCR, pronounced "Noida dot fit".`,
+    `You are "${owner}", one of the AI Interns. You are working for ${businessLine(business)}.`,
     `Your role: ${role}`,
+    `Teammates: ${teammates}.`,
     "",
-    "Below is context from the team's HQ doc in Notion. Treat it as the source of truth about the product, brand and plans. If the task conflicts with it, follow the HQ doc and point out the conflict.",
+    `Below is context from ${business.name}'s HQ doc in Notion. Treat it as the source of truth about this business. If the task conflicts with it, follow the HQ doc and point out the conflict. Do not mix in facts about other businesses.`,
     brandSafety
-      ? "This task produces public-facing copy. Follow every rule in the Brand Rules section exactly; never use a name, phrase or location the rules forbid."
+      ? `This task produces outward-facing text. Follow every rule in ${business.name}'s Brand Rules exactly; never use a name, phrase or location the rules forbid.`
       : "",
     "",
-    blocks.join("\n\n"),
+    renderSections(business, context, sections),
     "",
     "Output format:",
     "- First line: `Summary: <one sentence describing what you delivered>`.",
-    "- Then the deliverable itself in Markdown, ready to paste. No preamble about being an AI.",
+    "- Then the deliverable itself in Markdown, ready to use. No preamble about being an AI.",
     "- If the task is ambiguous, make a sensible assumption, state it in one line, and deliver anyway.",
   ]
     .filter((l, i, arr) => !(l === "" && arr[i - 1] === ""))
@@ -97,7 +117,8 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
   const detailLines = Object.entries(input.details ?? {})
     .filter(([, v]) => v.trim())
     .map(([k, v]) => `### ${k}\n${v.trim()}`);
-  const user = [`# Task\n${task.trim()}`, ...detailLines].join("\n\n");
+  const kindLine = TASK_KINDS[kind].instructions ? [`## Deliverable type: ${TASK_KINDS[kind].label}\n${TASK_KINDS[kind].instructions}`] : [];
+  const user = [`# Task\n${task.trim()}`, ...kindLine, ...detailLines].join("\n\n");
 
   return { system, user, sectionsUsed: sections, brandSafety };
 }

@@ -1,236 +1,209 @@
 # AI Interns HQ — Cloudflare Worker
 
-The central webhook and dispatch server for the **noida.fit** AI Interns team. It runs on one always-on URL and does four things:
+One always-on server that runs an AI team ("AI Interns") across **multiple businesses**, currently **noida.fit** and **SP International** (spinternationalpvtltd.com).
 
-1. **Receives webhooks** from Notion, GitHub and Slack, plus manual triggers.
-2. **Reads context** from the Notion doc **"AI Interns — HQ"**: Product Brief, Brand Rules, Tech Stack, Roadmap, AI Interns, Task Board.
-3. **Dispatches tasks** to AI agents (Claude for Code/Pro/Muse, Grok for Grok). Each agent gets only the context sections it needs.
-4. **Writes results back to Notion**: task status, the deliverable on the task page, and an audit line in the **Log** section.
+- **Delegate anything:** emails, research, social posts, marketing copy, code and docs. Send work from the panel, Notion, Slack, GitHub or the API.
+- **Shared context:** each business has a Notion **HQ doc** (Product Brief, Brand Rules, Tech Stack, Roadmap, AI Interns, Task Board, Log). Every task gets only the sections it needs.
+- **Two ways to work:** the server can run an intern itself through the Claude or Grok API, or put the task in the intern's **inbox** for an external agent (Grok in its own app, a Claude project, a custom GPT…). Inbox agents are onboarded with a generated setup prompt and work hands-free through the agent API.
+- **Everything lands in Notion:** task status, the deliverable on the task page, and an audit line in the business's **Log**.
+- **Management panel** at `/panel`: overview, delegate, task board, jobs, agents, business directory, HQ context, and a setup checklist with every key, env var, webhook URL and endpoint.
 
 ```
-Notion automation ─┐                          ┌─> Claude (Code · Pro · Muse)
-GitHub webhook ────┤   Worker (Hono)          │
-Slack command ─────┼─> verify ─> enqueue ─> Queue consumer ─┼─> Grok (Grok)
-POST /dispatch ────┘        │                   │           │
-                            │      HQ context (KV, 5-min TTL) <── Notion API
-                            ▼                   ▼
-                    202 in < 1s        Notion: status · deliverable · Log
-                                       Slack: reply in channel/thread
+ Panel / API / Notion / Slack / GitHub
+                 │
+                 ▼
+     Worker (Hono) ── business directory + config (KV)
+                 │
+     ┌───────────┴─────────────┐
+ delivery: api              delivery: inbox
+ Queue → Claude/Grok        waits for the external agent
+     │                       (GET /agent/v1/tasks → complete)
+     └───────────┬─────────────┘
+                 ▼
+  brand check → Notion (status · deliverable · Log) → Slack reply
 ```
 
-LLM calls can take minutes, but Slack wants a reply within 3 s and Notion and GitHub retry slow webhooks. So every webhook is **verified, enqueued and acknowledged right away**. A **Cloudflare Queue** consumer does the actual work, with up to 15 minutes per job, retries with backoff, and a dead-letter queue.
+---
+
+## Quick start
+
+Prerequisites: Node 20+, a Cloudflare account on the **Workers Paid** plan (Queues need it), and `npx wrangler login`.
+
+```bash
+npm install
+npx wrangler queues create ai-interns-dispatch-dlq    # dead-letter queue (the rest auto-provisions)
+
+npx wrangler secret put WEBHOOK_SECRET      # openssl rand -hex 32 — also your panel password
+npx wrangler secret put NOTION_TOKEN        # Notion internal integration
+npx wrangler secret put ANTHROPIC_API_KEY   # Claude (Code, Pro, Muse)
+npx wrangler secret put NOTION_HQ_PAGE_ID   # optional: noida.fit's HQ page (or set it in the panel)
+
+npm run check && npm run deploy             # or push to main if Workers Builds is connected
+```
+
+Then open **`https://<worker>/panel`**, sign in with `WEBHOOK_SECRET`, and follow the **Setup** tab. It shows which secrets are set, the exact `wrangler secret put` commands, and copy-ready webhook URLs for each business.
+
+### Secrets
+
+| Secret | Required | Purpose |
+|---|---|---|
+| `WEBHOOK_SECRET` | ✓ | Panel sign-in, `/dispatch` and `/context` auth, Notion automation header, and the seed for agent tokens |
+| `NOTION_TOKEN` | ✓ | Read HQ docs and write status, deliverables and logs |
+| `ANTHROPIC_API_KEY` | ✓ | Runs Code / Pro / Muse when delivery is `api` |
+| `NOTION_HQ_PAGE_ID` | | noida.fit's HQ page (can be set in Directory instead) |
+| `XAI_API_KEY` | | Runs Grok when its delivery is `api` |
+| `SLACK_SIGNING_SECRET` | | Verifies `/intern` commands and @mentions |
+| `SLACK_BOT_TOKEN` | | Threaded replies, and posting after Slack's 30-minute `response_url` window |
+| `GITHUB_WEBHOOK_SECRET` | | GitHub webhook signature (falls back to `WEBHOOK_SECRET`) |
+| `NOTION_WEBHOOK_VERIFICATION_TOKEN` | | Signed Notion integration webhooks |
+| *custom, e.g.* `NOTION_TOKEN_SPI` | | A business whose HQ lives in a **different Notion workspace**. Set its name in Directory |
+
+### Vars (`wrangler.jsonc`)
+
+| Var | Default | |
+|---|---|---|
+| `CLAUDE_MODEL` | `claude-opus-5-5` | Model for Code / Pro / Muse |
+| `CLAUDE_EFFORT` | `medium` | `low` … `max` |
+| `GROK_MODEL` | `grok-4` | Check xAI's current list |
+| `CONTEXT_CACHE_TTL_SECONDS` | `300` | HQ context cache |
+| `LOG_TIMEZONE_OFFSET_MINUTES` | `330` | Log timestamps (IST) |
+
+---
+
+## Businesses (Directory)
+
+The directory is stored in KV and edited in the panel (**Directory** tab). It's seeded with:
+
+| id | Name | Aliases | Notes |
+|---|---|---|---|
+| `noidafit` *(default)* | noida.fit | `nf`, `noida` | Uses `NOTION_HQ_PAGE_ID`; noida.fit brand notes and never-use terms are pre-filled |
+| `spinternational` | SP International | `spi`, `sp` | **Connect its HQ page** and add a description in Directory |
+
+Each business has: name, domain, aliases, a one-line description, a Notion HQ page, an optional Notion token secret (for another workspace), fallback brand notes, and **never-use phrases** that every piece of copy is checked against. A business without an HQ doc still works: interns use the directory description and the result carries a warning.
+
+Use **Test connection** in Directory to confirm the worker can read an HQ doc and see which sections it found.
+
+## Task types
+
+| Kind | Default intern | What the deliverable looks like |
+|---|---|---|
+| `email` | Pro | Subject + body + sign-off, `[placeholders]` for unknowns. **Draft only, never sent** |
+| `research` | Pro | Findings, comparison table, recommendation, open questions. No invented facts |
+| `social` | Grok | 3 post options with rationale |
+| `copy` | Muse | Polished copy with variants |
+| `code` | Code | Working code or a precise plan, with verification steps |
+| `doc` | Pro | Structured doc with decisions, owners and next steps |
+| `general` | — | No extra format |
+
+Brand Rules are always attached for Grok and Muse, for `email`, `social` and `copy`, and for anything that reads like marketing.
+
+## Interns & delivery
+
+| Intern | Role | API model |
+|---|---|---|
+| **Code** | Engineering: code, specs, integrations | Claude |
+| **Pro** | Ops & strategy: research, business email, PRDs, proposals | Claude |
+| **Grok** | Social & trends: X posts, threads, trend scans | Grok (xAI) |
+| **Muse** | Creative & brand: marketing copy, campaigns, newsletters | Claude |
+
+**Delivery** is set per intern in the **Agents** tab, and can be overridden per task:
+- **API**: the worker runs the task itself through the queue, with retries.
+- **Inbox**: the task waits for the external agent, which picks it up through the agent API, or you paste its result into the panel.
+
+### Onboarding an external agent
+Agents tab → intern → **Setup prompt** → paste it into the agent (e.g. Grok, a Claude project, a custom GPT with actions). The prompt includes:
+- who the intern is, its teammates, and both businesses
+- the base URL and the intern's **own token**. Tokens are derived from `WEBHOOK_SECRET`, scoped to that intern, and rotate when the secret does
+- every agent endpoint, the hands-free working loop ("check in" → briefing → tasks → claim → complete/delegate → report), and the ground rules (one business per task, brand rules, drafts only, no invented facts)
+
+For agents that **can't make HTTP calls**, use **Offline pack**: the shared context and the current inbox, pasted in. The agent answers with `=== RESULT <id> === … === END ===` blocks, which you paste into **Agents → Paste results**, and they're written to Notion like any other result.
 
 ---
 
 ## Endpoints
 
-| Method | Path | Auth | Purpose |
+### Public / integrations
+| Method | Path | Auth | |
 |---|---|---|---|
-| `POST` | `/webhook/notion` | `X-Webhook-Secret` header **or** `X-Notion-Signature` | Task moved to **In progress** → dispatch to its Owner |
-| `POST` | `/webhook/github` | `X-Hub-Signature-256` | `issues`/`pull_request` labelled `ai:<intern>` → dispatch; pushes to default branch → Log |
-| `POST` | `/webhook/slack` | `X-Slack-Signature` | `/intern <intern> <task>` slash command, or `@AI Interns muse …` mentions |
-| `POST` | `/dispatch` | `Bearer WEBHOOK_SECRET` | Manual dispatch |
-| `GET` | `/context` | `Bearer WEBHOOK_SECRET` | HQ context as JSON (or Markdown) |
-| `GET` | `/health` | none | Health/config check (503 if required secrets are missing) |
+| `GET` | `/health` | — | Health + config check |
+| `GET` | `/panel` | sign-in in the browser | Management panel |
+| `POST` | `/webhook/notion?business=<id>` | `X-Webhook-Secret` or `X-Notion-Signature` | Task → **In progress** triggers its Owner |
+| `POST` | `/webhook/github?business=<id>` | `X-Hub-Signature-256` | `ai:<intern>` labels delegate; default-branch pushes are logged |
+| `POST` | `/webhook/slack` | `X-Slack-Signature` | `/intern [business] <intern\|type> <task>`, @mentions |
 
-### `POST /dispatch`
-
-```bash
-curl -X POST https://business-hq.<account>.workers.dev/dispatch \
-  -H "Authorization: Bearer $WEBHOOK_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "task": "Write 3 launch tweets for .fit ID",
-    "owner": "Muse",
-    "context_sections": ["product_brief", "brand_rules"],
-    "notion_task_id": "https://www.notion.so/…-1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-    "async": true
-  }'
-# → 202 {"id":"…","status":"queued","owner":"Muse"}
-```
-
-| Field | Required | Notes |
+### Admin (Bearer `WEBHOOK_SECRET`)
+| Method | Path | |
 |---|---|---|
-| `task` | yes | Up to 20k chars |
-| `owner` | yes | `Code` · `Pro` · `Grok` · `Muse` (case-insensitive) |
-| `context_sections` | no | Any of `product_brief`, `brand_rules`, `tech_stack`, `roadmap`, `ai_interns`, `task_board`. Defaults per intern (below) |
-| `notion_task_id` | no | Task Board row (id or URL). Gets set to In progress → Done/Blocked, and receives the deliverable |
-| `async` | no | Default `true`. With `false`, the worker runs inline and returns the full result (can take minutes) |
+| `POST` | `/dispatch` | `{task, owner?, kind?, business?, context_sections?, notion_task_id?, delivery?, async?}`. `owner` can be omitted when `kind` implies one |
+| `GET` | `/context?business=<id>&sections=…&format=markdown&refresh=1` | A business's HQ context |
+| `GET` | `/api/meta`, `/api/config` · `PUT /api/config` | Directory + intern delivery |
+| `POST` | `/api/businesses/:id/test` | Read the HQ doc fresh and report what was found |
+| `GET` | `/api/jobs?business=&owner=&status=` · `/api/jobs/:id` | Job history (7 days) |
+| `POST` | `/api/jobs/:id/retry` · `/api/jobs/:id/complete` | Re-run · submit an offline agent's result |
+| `GET` | `/api/agents` · `/api/onboarding/:owner?variant=connected\|offline` | Tokens, inbox counts · setup prompts |
+| `GET` | `/api/setup` | Secrets status, bindings, per-business webhook URLs, endpoint list |
 
-When there's no `notion_task_id`, the full output is nested under the Log entry in the HQ doc.
-
-### `GET /context`
-
-```bash
-curl -H "Authorization: Bearer $WEBHOOK_SECRET" "$URL/context?sections=brand_rules,tech_stack"
-curl -H "Authorization: Bearer $WEBHOOK_SECRET" "$URL/context?format=markdown"   # paste into any agent
-curl -H "Authorization: Bearer $WEBHOOK_SECRET" "$URL/context?refresh=1"         # bypass cache
-```
-
-The response includes `sections` (title, markdown, parsed `tables`), `tasks` (from the Task Board), `fetchedAt`, `warnings` (e.g. a section heading not found), and an `X-Cache: HIT|MISS|STALE|REFRESH` header.
-
----
-
-## Behaviour
-
-### Context caching
-The parsed HQ doc is cached in Workers KV for `CONTEXT_CACHE_TTL_SECONDS` (default 300 s). If Notion is down, the worker serves the **last good copy** (kept up to 24 h) rather than failing. Notion webhooks for the HQ page or any task row clear the cache automatically.
-
-### Scoped context
-Each intern gets only what it needs (`src/agents/registry.ts`):
-
-| Intern | Model | Default sections |
+### Agents (Bearer agent token, `/agent/v1`)
+| Method | Path | |
 |---|---|---|
-| **Code** | Claude (`CLAUDE_MODEL`) | Product Brief, Tech Stack, Roadmap |
-| **Pro** | Claude | Product Brief, Roadmap, Task Board |
-| **Grok** | xAI Grok (`GROK_MODEL`) | Product Brief, Brand Rules |
-| **Muse** | Claude | Product Brief, Brand Rules, Roadmap |
+| `GET` | `/me` | Identity, businesses, teammates, task kinds |
+| `GET` | `/briefing?business=<id>&format=json` | Shared context (Markdown by default) |
+| `GET` | `/tasks` · `/tasks/:id` | Inbox · one task with a ready-made prompt (system + user) |
+| `POST` | `/tasks/:id/claim` · `/complete` · `/fail` | `complete`: `{summary?, output}` · `fail`: `{reason}` |
+| `POST` | `/delegate` | `{task, owner?, kind?, business?, notes?, parent_task_id?}`. Hand off to a teammate (max chain depth 3, not to yourself) |
+| `POST` | `/log` | `{business?, message}` adds a note to that business's HQ Log |
 
-If a row in the HQ doc's **AI Interns** table names the intern, that row's description becomes the intern's role in the prompt.
+### Examples
+```bash
+# Research for SP International (kind → Pro)
+curl -X POST "$URL/dispatch" -H "Authorization: Bearer $WEBHOOK_SECRET" -H "Content-Type: application/json" \
+  -d '{"business":"spi","kind":"research","task":"Compare freight forwarders for Mumbai → Dubai, 2 pallets/month"}'
 
-### Brand safety
-- **Brand Rules are always attached** to Grok and Muse tasks, and to any task that reads like marketing (tweet, caption, landing page, campaign, email, launch…). This applies even when the caller passes `context_sections` without it.
-- If the Brand Rules section can't be read, a built-in baseline is used instead (noida.fit naming, ".fit ID", no specific localities, colours).
-- Output from copy tasks is **linted** for known violations ("Fitness ID", "Fit ID" without the dot, "Greater Noida", "NoidaFit"). Hits show up as ⚠️ callouts on the deliverable and in Slack. They're advisory and don't block the task.
-
-### Audit log
-Every dispatch, whether it succeeds or fails, appends a line to the HQ doc's **Log** section:
-
+# Email draft for noida.fit, straight to Muse's inbox
+curl -X POST "$URL/dispatch" -H "Authorization: Bearer $WEBHOOK_SECRET" -H "Content-Type: application/json" \
+  -d '{"business":"noidafit","owner":"Muse","kind":"email","delivery":"inbox","task":"Invite gym owners to list events"}'
 ```
-2026-10-18 14:02 IST · Muse · Write 3 launch tweets for .fit ID · ✅ Three tweet drafts for the .fit ID launch ↗
-```
-
-The worker finds the Log section fresh on each write and inserts at its end, even if other sections come after it. If the doc has no Log heading, one is created. Toggle headings are supported.
-
-### Reliability
-- **Idempotent retries**: the LLM result and each write-back step are checkpointed in KV. A retried job never calls the model twice or writes duplicate deliverables.
-- **Retry policy**: rate limits, 5xx errors and network errors retry with exponential backoff (30 s → 60 s → 120 s). Bad requests, auth errors and refusals fail fast. A failed job sets the task to **Blocked**, logs ❌ with the reason, and replies in Slack.
-- **Duplicate protection**: a task that's already running ignores further "In progress" webhooks. GitHub deliveries and Slack events are de-duplicated by delivery/event id, and Slack retries are dropped.
-- **Claude** calls use streaming, prompt caching on the system prompt (persona + HQ context), adaptive thinking with `CLAUDE_EFFORT`, and server-side refusal fallbacks (`fallbacks: "default"`).
+Slack: `/intern spi email follow up with the distributor about the revised quote` · `/intern muse 3 taglines for the .fit ID launch`
 
 ---
 
-## Notion setup
+## Notion setup (per business)
+1. Create the HQ page with these headings: **Product Brief, Brand Rules, Tech Stack, Roadmap, AI Interns, Task Board, Log**. Emoji, suffixes and toggle headings are fine.
+2. Under **Task Board**, add an **inline database** with:
+   - a title property
+   - **Owner** (Select: Code / Pro / Grok / Muse / Human)
+   - **Status** (Status or Select: To do / In progress / Done / Blocked)
+   - optionally **Type** (Email / Research / Social post / Marketing copy / Code / technical / Doc / plan)
 
-### 1. The HQ doc
-Create a page titled **AI Interns — HQ** with these headings (H1/H2/H3; emoji and suffixes like "Roadmap (Q4)" are fine; toggle headings work):
+   Other properties and the page body are passed to the intern as details.
+3. Share the page with the integration (••• → Connections). If the business is in another workspace, create an integration there, store its token as a secret, and put the secret's name in Directory.
+4. Paste the page URL into **Directory → Edit → Notion HQ page**, then click **Test connection**.
+5. Add a database automation: **Status is set to In progress → Send webhook** to the business's Notion URL from the Setup tab, with the header `X-Webhook-Secret: <WEBHOOK_SECRET>`.
 
-- **Product Brief** – what noida.fit is, MVP features, current state
-- **Brand Rules** – table recommended (e.g. `Rule | Do | Don't`)
-- **Tech Stack** – table
-- **Roadmap** – shipped + next
-- **AI Interns** – table, e.g. `Intern | Tool | Handles` with rows for Code, Pro, Grok, Muse
-- **Task Board** – an **inline database** with:
-  - a title property (the task)
-  - **Owner** – Select: `Code`, `Pro`, `Grok`, `Muse`, `Human`
-  - **Status** – Status or Select: `To do`, `In progress`, `Done`, `Blocked`
-  - any other properties (Due, Notes…), plus the task page body, are passed to the intern as extra detail
-- **Log** – can start empty
+## Reliability notes
+- Webhooks are verified, acknowledged in under a second, and processed through the queue (retries with backoff, dead-letter queue). A failed job sets the task to **Blocked**, logs ❌, and replies in Slack.
+- Each job's result and write-back steps are checkpointed in KV, so retries never call the model twice or write duplicates.
+- HQ context is cached per business for 5 minutes. If Notion is down, the last good copy (up to 24 h old) is served.
+- Claude calls stream, cache the system prompt, use adaptive thinking with `CLAUDE_EFFORT`, and enable server-side refusal fallbacks.
+- The panel ships with a strict nonce-based CSP. Agent output is only ever rendered as text.
 
-A plain table also works for the Task Board, but then it's read-only: tasks can't be triggered from Notion or have their status updated.
-
-### 2. Integration
-1. Go to <https://www.notion.so/profile/integrations> → **New integration** (internal). Copy the secret (`ntn_…`) → `NOTION_TOKEN`.
-2. Give it **Read content, Update content, Insert content** capabilities.
-3. On the HQ page: **••• → Connections → add your integration**. This also covers the inline Task Board.
-4. Copy the page ID (the 32-hex string at the end of the page URL) → `NOTION_HQ_PAGE_ID`. A full URL also works.
-
-### 3. Trigger: task → In progress
-**Option A: Database automation (simplest).** On the Task Board database: **⚡ Automations → New** →
-*Trigger:* `Status` is set to `In progress` → *Action:* **Send webhook**
-- URL: `https://<worker>/webhook/notion`
-- Custom header: `X-Webhook-Secret: <WEBHOOK_SECRET>`
-
-**Option B: Integration webhooks (signed).** In the integration settings → **Webhooks** → subscription URL `https://<worker>/webhook/notion`, events `page.properties_updated` (and optionally `page.content_updated` to bust the context cache on HQ edits). Notion sends a verification token. The worker logs it (run `npx wrangler tail` and look for `notion_webhook_verification_token_received`). Paste it into Notion to verify, then:
+## Development
 ```bash
-npx wrangler secret put NOTION_WEBHOOK_VERIFICATION_TOKEN
+cp .dev.vars.example .dev.vars   # fill in values
+npm run dev                      # http://localhost:8787/panel
+npm test                         # vitest
+npm run check                    # typecheck + tests + bundle
 ```
-
-Either way, the worker re-reads the page and only dispatches when **Status = In progress** and **Owner** is an AI intern on the HQ Task Board.
-
----
-
-## GitHub setup
-Repo → **Settings → Webhooks → Add webhook**
-- Payload URL: `https://<worker>/webhook/github`, content type `application/json`
-- Secret: `GITHUB_WEBHOOK_SECRET` (or `WEBHOOK_SECRET` if you don't set a separate one)
-- Events: **Issues**, **Pull requests**, **Pushes**
-
-Then:
-- Label an issue or PR `ai:code` / `ai:pro` / `ai:grok` / `ai:muse` and it's dispatched to that intern. The result goes to the HQ Log.
-- Pushes to the default branch are recorded in the Log ("3 commit(s) by …").
-
-## Slack setup
-At <https://api.slack.com/apps> → **Create app**
-- **Basic Information → Signing Secret** → `SLACK_SIGNING_SECRET`
-- **Slash Commands** → `/intern`, Request URL `https://<worker>/webhook/slack`
-- *(Optional)* **Event Subscriptions** → Request URL the same, bot event `app_mention`. Add the `chat:write` scope, install, and set **Bot User OAuth Token** → `SLACK_BOT_TOKEN` so the bot can reply in threads.
-
-Usage: `/intern muse write 3 taglines for the .fit ID launch` or `@AI Interns code: outline the check-in API`. You get an ephemeral ack right away and the result posts in the channel when ready.
-
----
-
-## Deploy
-
-Prerequisites: Node 20+, a Cloudflare account on the **Workers Paid** plan (Queues require it), and `npx wrangler login`.
-
-```bash
-npm install
-
-# 1–2. KV namespace (HQ_CACHE) and the main queue are created automatically on first deploy.
-#      The dead-letter queue must exist first:
-npx wrangler queues create ai-interns-dispatch-dlq
-
-# 3. Secrets (required)
-npx wrangler secret put NOTION_TOKEN
-npx wrangler secret put NOTION_HQ_PAGE_ID
-npx wrangler secret put ANTHROPIC_API_KEY
-npx wrangler secret put WEBHOOK_SECRET          # e.g. `openssl rand -hex 32`
-
-# 4. Secrets (optional; enable the matching features)
-npx wrangler secret put XAI_API_KEY             # Grok intern
-npx wrangler secret put GITHUB_WEBHOOK_SECRET
-npx wrangler secret put SLACK_SIGNING_SECRET
-npx wrangler secret put SLACK_BOT_TOKEN
-npx wrangler secret put NOTION_WEBHOOK_VERIFICATION_TOKEN
-
-# 5. Ship it
-npm run check     # typecheck + tests + bundle
-npm run deploy
-
-curl https://business-hq.<account>.workers.dev/health
-```
-
-Watch it live with `npm run tail`. Failed jobs that exhaust retries land in `ai-interns-dispatch-dlq`. They've already been marked Blocked and logged in Notion.
-
-### Configuration (`wrangler.jsonc` → `vars`)
-
-| Var | Default | Notes |
-|---|---|---|
-| `CLAUDE_MODEL` | `claude-opus-5-5` | Model for Code / Pro / Muse |
-| `CLAUDE_EFFORT` | `medium` | `low` · `medium` · `high` · `xhigh` · `max` |
-| `GROK_MODEL` | `grok-4` | Check xAI's current model list |
-| `CONTEXT_CACHE_TTL_SECONDS` | `300` | HQ context cache freshness |
-| `LOG_TIMEZONE_OFFSET_MINUTES` | `330` | Log timestamps (330 = IST) |
-
-## Local development
-
-```bash
-cp .dev.vars.example .dev.vars   # fill in real values
-npm run dev                      # http://localhost:8787 (local KV + Queue simulators)
-npm test
-```
-
-## Project layout
 
 ```
 src/
-  index.ts              Hono app, middleware, error handling, queue export
-  env.ts                Bindings/secrets types
-  routes/               notion · github · slack webhooks, /dispatch, /context, auth
-  dispatch/             job types, queue consumer, the run pipeline (generate → write back → notify)
-  agents/               intern registry, prompt + scoped context, brand safety, Claude + Grok clients
-  notion/               HQ fetch + KV cache, heading parser, Markdown→blocks, write-back
-  lib/                  signatures, errors, logging, Slack, idempotency, time
-test/                   vitest unit tests (signatures, parsing, scoping, brand lint, blocks)
+  index.ts            app, middleware, routing, queue handler
+  config/store.ts     business directory + intern delivery (KV)
+  routes/             webhooks (notion, github, slack), dispatch, context, jobs, admin, agent API, panel
+  dispatch/           job types, start (api/inbox), queue consumer, run pipeline, job records
+  agents/             registry + task kinds, prompt builder, brand safety, onboarding prompts, Claude/Grok clients
+  notion/             HQ fetch + cache, heading parser, Markdown→blocks, write-back
+  panel/panel.html    management panel (single file, no build step)
+  lib/                signatures, agent tokens, errors, logging, Slack, idempotency, time
+test/                 vitest unit tests
 ```

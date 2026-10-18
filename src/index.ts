@@ -5,10 +5,14 @@ import type { DispatchJob } from "./dispatch/types";
 import { type AppBindings, type Env, missingRequiredSecrets } from "./env";
 import { HttpError } from "./lib/errors";
 import { log } from "./lib/logger";
+import { adminRoutes } from "./routes/admin";
+import { agentRoutes } from "./routes/agent";
 import { contextRoutes } from "./routes/context";
 import { dispatchRoutes } from "./routes/dispatch";
 import { githubWebhook } from "./routes/github";
+import { jobRoutes } from "./routes/jobs";
 import { notionWebhook } from "./routes/notion";
+import { panelRoutes } from "./routes/panel";
 import { slackWebhook } from "./routes/slack";
 
 const VERSION = "1.0.0";
@@ -42,8 +46,10 @@ app.use(
 );
 
 // Fail closed if the worker is deployed without its required secrets.
+// The panel page and /health stay reachable so a misconfiguration is visible.
+const ALWAYS_REACHABLE = new Set(["/", "/health", "/panel"]);
 app.use("*", async (c, next) => {
-  if (c.req.path !== "/health") {
+  if (!ALWAYS_REACHABLE.has(c.req.path)) {
     const missing = missingRequiredSecrets(c.env);
     if (missing.length) throw new HttpError(503, "Worker is not configured", { missing });
   }
@@ -74,6 +80,10 @@ app.route("/webhook/github", githubWebhook);
 app.route("/webhook/slack", slackWebhook);
 app.route("/dispatch", dispatchRoutes);
 app.route("/context", contextRoutes);
+app.route("/api/jobs", jobRoutes);
+app.route("/api", adminRoutes);
+app.route("/agent/v1", agentRoutes);
+app.route("/", panelRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 

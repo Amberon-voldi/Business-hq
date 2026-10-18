@@ -49,6 +49,7 @@ export interface HqTask {
 }
 
 export interface HqContext {
+  businessId: string;
   pageId: string;
   title: string;
   fetchedAt: string;
