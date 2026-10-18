@@ -1,0 +1,12 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit the real file.
+NOTION_TOKEN=ntn_xxx
+NOTION_HQ_PAGE_ID=00000000000000000000000000000000
+ANTHROPIC_API_KEY=sk-ant-xxx
+WEBHOOK_SECRET=change-me-long-random-string
+
+# Optional
+XAI_API_KEY=
+GITHUB_WEBHOOK_SECRET=
+SLACK_SIGNING_SECRET=
+SLACK_BOT_TOKEN=
+NOTION_WEBHOOK_VERIFICATION_TOKEN=

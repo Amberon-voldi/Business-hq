@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ai-interns-hq",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Non-secret configuration. Secrets go in via `wrangler secret put` (see README).
+  "vars": {
+    "CLAUDE_MODEL": "claude-opus-5-5",
+    "CLAUDE_EFFORT": "medium",
+    "GROK_MODEL": "grok-4",
+    "CONTEXT_CACHE_TTL_SECONDS": "300",
+    "LOG_TIMEZONE_OFFSET_MINUTES": "330"
+  },
+
+  // Cache for the parsed "AI Interns — HQ" doc. Replace the id after `wrangler kv namespace create HQ_CACHE`.
+  "kv_namespaces": [
+    { "binding": "HQ_CACHE", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+  ],
+
+  // LLM calls can take minutes; webhooks must be acked in seconds. Work is queued and
+  // processed by the queue consumer below (15-minute wall clock per message).
+  "queues": {
+    "producers": [{ "binding": "DISPATCH_QUEUE", "queue": "ai-interns-dispatch" }],
+    "consumers": [
+      {
+        "queue": "ai-interns-dispatch",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "retry_delay": 30,
+        "dead_letter_queue": "ai-interns-dispatch-dlq"
+      }
+    ]
+  }
+}

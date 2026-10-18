@@ -1,0 +1,28 @@
+{
+  "name": "ai-interns-hq",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Central webhook + dispatch worker for the noida.fit AI Interns team",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && wrangler deploy --dry-run --outdir dist",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@notionhq/client": "^5.27.1",
+    "hono": "^4.13.13",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261018.1",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.151.1"
+  }
+}
