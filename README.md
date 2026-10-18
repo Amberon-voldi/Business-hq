@@ -36,7 +36,7 @@ LLM calls can take minutes, but Slack wants a reply within 3 s and Notion and Gi
 ### `POST /dispatch`
 
 ```bash
-curl -X POST https://ai-interns-hq.<account>.workers.dev/dispatch \
+curl -X POST https://business-hq.<account>.workers.dev/dispatch \
   -H "Authorization: Bearer $WEBHOOK_SECRET" \
   -H "Content-Type: application/json" \
   -d '{
@@ -177,11 +177,8 @@ Prerequisites: Node 20+, a Cloudflare account on the **Workers Paid** plan (Queu
 ```bash
 npm install
 
-# 1. KV namespace for the context cache: paste the printed id into wrangler.jsonc (HQ_CACHE)
-npx wrangler kv namespace create HQ_CACHE
-
-# 2. Queues
-npx wrangler queues create ai-interns-dispatch
+# 1–2. KV namespace (HQ_CACHE) and the main queue are created automatically on first deploy.
+#      The dead-letter queue must exist first:
 npx wrangler queues create ai-interns-dispatch-dlq
 
 # 3. Secrets (required)
@@ -201,7 +198,7 @@ npx wrangler secret put NOTION_WEBHOOK_VERIFICATION_TOKEN
 npm run check     # typecheck + tests + bundle
 npm run deploy
 
-curl https://ai-interns-hq.<account>.workers.dev/health
+curl https://business-hq.<account>.workers.dev/health
 ```
 
 Watch it live with `npm run tail`. Failed jobs that exhaust retries land in `ai-interns-dispatch-dlq`. They've already been marked Blocked and logged in Notion.

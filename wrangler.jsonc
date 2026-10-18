@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "ai-interns-hq",
+  "name": "business-hq",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -15,9 +15,9 @@
     "LOG_TIMEZONE_OFFSET_MINUTES": "330"
   },
 
-  // Cache for the parsed "AI Interns — HQ" doc. Replace the id after `wrangler kv namespace create HQ_CACHE`.
+  // Cache for the parsed "AI Interns — HQ" doc. No id: wrangler creates the namespace on first deploy.
   "kv_namespaces": [
-    { "binding": "HQ_CACHE", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+    { "binding": "HQ_CACHE" }
   ],
 
   // LLM calls can take minutes; webhooks must be acked in seconds. Work is queued and
