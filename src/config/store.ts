@@ -32,7 +32,7 @@ export type Business = z.infer<typeof BusinessSchema>;
 export const DELIVERY = ["api", "inbox"] as const;
 export type Delivery = (typeof DELIVERY)[number];
 
-const InternSchema = z.object({ delivery: z.enum(DELIVERY).default("api") });
+const InternSchema = z.object({ delivery: z.enum(DELIVERY).default("inbox") });
 
 export const ConfigSchema = z.object({
   businesses: z
@@ -86,7 +86,8 @@ export function defaultConfig(env: Env): HqConfig {
         forbiddenTerms: [],
       },
     ],
-    interns: { Code: { delivery: "api" }, Pro: { delivery: "api" }, Grok: { delivery: "api" }, Muse: { delivery: "api" } },
+    // Inbox by default: interns run in apps you already subscribe to, so nothing is billed per token.
+    interns: { Code: { delivery: "inbox" }, Pro: { delivery: "inbox" }, Grok: { delivery: "inbox" }, Muse: { delivery: "inbox" } },
   };
 }
 
@@ -154,5 +155,5 @@ export function notionTokenFor(env: Env, business: Business | null): string {
 }
 
 export function deliveryFor(config: HqConfig, owner: Owner): Delivery {
-  return config.interns[owner]?.delivery ?? "api";
+  return config.interns[owner]?.delivery ?? "inbox";
 }

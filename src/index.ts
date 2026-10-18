@@ -11,6 +11,7 @@ import { contextRoutes } from "./routes/context";
 import { dispatchRoutes } from "./routes/dispatch";
 import { githubWebhook } from "./routes/github";
 import { jobRoutes } from "./routes/jobs";
+import { mcpRoutes } from "./routes/mcp";
 import { notionWebhook } from "./routes/notion";
 import { panelRoutes } from "./routes/panel";
 import { slackWebhook } from "./routes/slack";
@@ -28,7 +29,8 @@ app.use("*", async (c, next) => {
   log("info", "request", {
     requestId,
     method: c.req.method,
-    path: c.req.path,
+    // Connector URLs carry the agent token; never write it to logs.
+    path: c.req.path.replace(/^\/mcp\/[^/]+/, "/mcp/[token]"),
     status: c.res.status,
     ms: Date.now() - started,
   });
@@ -83,6 +85,7 @@ app.route("/context", contextRoutes);
 app.route("/api/jobs", jobRoutes);
 app.route("/api", adminRoutes);
 app.route("/agent/v1", agentRoutes);
+app.route("/mcp", mcpRoutes);
 app.route("/", panelRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));

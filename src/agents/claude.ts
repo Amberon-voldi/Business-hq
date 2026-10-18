@@ -11,6 +11,9 @@ function effortFrom(env: Env): Effort {
 }
 
 export async function callClaude(env: Env, call: AgentCall): Promise<AgentOutput> {
+  if (!env.ANTHROPIC_API_KEY) {
+    throw new DispatchError("ANTHROPIC_API_KEY is not set. Switch this intern to inbox delivery or add the key.", false);
+  }
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 2 });
   const model = env.CLAUDE_MODEL || "claude-opus-5-5";
 

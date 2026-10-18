@@ -10,19 +10,23 @@ import { HttpError, errorMessage } from "../lib/errors";
 import { getHqContext } from "../notion/hq";
 import { CONTEXT_SECTION_KEYS } from "../notion/types";
 import { requireSharedSecret } from "./auth";
-import { loadContexts, promptForJob } from "./util";
+import { z } from "zod";
+import { parseRecipient, sendMessage, teamFeed, unreadCount } from "../team/messages";
+import { businessFromRef, loadContexts, promptForJob } from "./util";
 
 /** Admin JSON API behind the panel. Everything here requires WEBHOOK_SECRET. */
 export const adminRoutes = new Hono<AppBindings>();
 adminRoutes.use("*", requireSharedSecret);
 
 const origin = (url: string) => new URL(url).origin;
+const apiKeySet = (env: Env, o: (typeof OWNERS)[number]) =>
+  AGENTS[o].provider === "xai" ? Boolean(env.XAI_API_KEY) : Boolean(env.ANTHROPIC_API_KEY);
 
 /** Static facts + config the panel renders from. */
 adminRoutes.get("/meta", async (c) => {
   const config = await getConfig(c.env);
   return c.json({
-    owners: OWNERS.map((o) => ({ ...AGENTS[o], delivery: deliveryFor(config, o) })),
+    owners: OWNERS.map((o) => ({ ...AGENTS[o], delivery: deliveryFor(config, o), apiAvailable: apiKeySet(c.env, o) })),
     sections: CONTEXT_SECTION_KEYS.map((key) => ({ key, title: SECTION_TITLES[key] })),
     kinds: TASK_KIND_KEYS.map((key) => ({ key, label: TASK_KINDS[key].label, owner: TASK_KINDS[key].owner })),
     businesses: config.businesses,
@@ -73,16 +77,24 @@ adminRoutes.post("/businesses/:id/test", async (c) => {
 adminRoutes.get("/agents", async (c) => {
   const config = await getConfig(c.env);
   const open = await listJobs(c.env, 500, { statuses: ["assigned", "running"] });
+  const base = origin(c.req.url);
   return c.json({
     agents: await Promise.all(
-      OWNERS.map(async (o) => ({
-        owner: o,
-        role: AGENTS[o].role,
-        provider: AGENTS[o].provider,
-        delivery: deliveryFor(config, o),
-        token: await agentToken(c.env.WEBHOOK_SECRET, o),
-        inbox: open.filter((j) => j.owner === o && j.delivery === "inbox").length,
-      })),
+      OWNERS.map(async (o) => {
+        const token = await agentToken(c.env.WEBHOOK_SECRET, o);
+        return {
+          owner: o,
+          role: AGENTS[o].role,
+          provider: AGENTS[o].provider,
+          delivery: deliveryFor(config, o),
+          apiAvailable: apiKeySet(c.env, o),
+          token,
+          mcpUrl: `${base}/mcp/${token}`,
+          apiBase: `${base}/agent/v1`,
+          inbox: open.filter((j) => j.owner === o && j.delivery === "inbox").length,
+          unread: await unreadCount(c.env, o),
+        };
+      }),
     ),
   });
 });
@@ -109,7 +121,8 @@ adminRoutes.get("/onboarding/:owner", async (c) => {
         return { item, detail };
       }),
     );
-    prompt = offlinePrompt({ owner, config, contexts, tasks });
+    const messages = (await teamFeed(c.env, 100)).filter((m) => m.from !== owner && (m.to === owner || m.to === "team")).slice(-20);
+    prompt = offlinePrompt({ owner, config, contexts, tasks, messages });
   }
   return c.text(prompt, 200, { "content-type": "text/markdown; charset=utf-8", "cache-control": "no-store" });
 });
@@ -127,9 +140,9 @@ function secretsStatus(env: Env, notionTokenEnvs: string[]): SecretInfo[] {
   const list: Omit<SecretInfo, "set">[] = [
     { name: "WEBHOOK_SECRET", required: true, purpose: "Signs in to this panel, authenticates /dispatch, /context and Notion automations, and derives agent tokens.", where: "Make one: openssl rand -hex 32" },
     { name: "NOTION_TOKEN", required: true, purpose: "Reads HQ docs and writes status, deliverables and logs.", where: "notion.so/profile/integrations → New internal integration (Read, Update, Insert content)" },
-    { name: "ANTHROPIC_API_KEY", required: true, purpose: "Runs Code, Pro and Muse via Claude when their delivery is \"api\".", where: "platform.claude.com → API keys" },
+    { name: "ANTHROPIC_API_KEY", required: false, purpose: "Not needed when interns work from their inbox (the default). Only for \"api\" delivery, which Anthropic bills per token, separately from any Claude subscription.", where: "platform.claude.com → API keys" },
     { name: "NOTION_HQ_PAGE_ID", required: false, purpose: "noida.fit's HQ page (you can also set it in Directory instead).", where: "The 32-character id at the end of the HQ page URL" },
-    { name: "XAI_API_KEY", required: false, purpose: "Runs Grok via the xAI API when Grok's delivery is \"api\".", where: "console.x.ai → API keys" },
+    { name: "XAI_API_KEY", required: false, purpose: "Only for Grok on \"api\" delivery (billed per token by xAI). Not needed for inbox delivery.", where: "console.x.ai → API keys" },
     { name: "SLACK_SIGNING_SECRET", required: false, purpose: "Verifies /intern slash commands and @mentions.", where: "api.slack.com/apps → your app → Basic Information" },
     { name: "SLACK_BOT_TOKEN", required: false, purpose: "Lets the bot reply in threads and post results after the 30-min response window.", where: "api.slack.com/apps → OAuth & Permissions (chat:write) → Bot User OAuth Token" },
     { name: "GITHUB_WEBHOOK_SECRET", required: false, purpose: "Verifies GitHub webhooks (falls back to WEBHOOK_SECRET).", where: "Any random string; paste the same value into the GitHub webhook" },
@@ -177,8 +190,26 @@ adminRoutes.get("/setup", async (c) => {
       { method: "POST", path: "/webhook/notion?business=<id>", auth: "X-Webhook-Secret or X-Notion-Signature", purpose: "Task → In progress triggers its intern" },
       { method: "POST", path: "/webhook/github?business=<id>", auth: "X-Hub-Signature-256", purpose: "ai:<intern> labels dispatch; pushes are logged" },
       { method: "POST", path: "/webhook/slack", auth: "X-Slack-Signature", purpose: "/intern [business] <intern|type> <task>, @mentions" },
-      { method: "GET", path: "/agent/v1/…", auth: "Bearer agent token", purpose: "External agents: me, briefing, tasks, claim, complete, fail, delegate, log" },
-      { method: "GET", path: "/api/…", auth: "Bearer WEBHOOK_SECRET", purpose: "Panel API: meta, config, jobs, agents, onboarding, setup" },
+      { method: "POST", path: "/mcp/<agent token>", auth: "token in URL", purpose: "MCP connector for Claude apps / Claude Code / any MCP client: check_in, tasks, complete, delegate, messages, log" },
+      { method: "GET", path: "/agent/v1/…", auth: "Bearer agent token", purpose: "Agent HTTP API: me, briefing, tasks, claim, complete, fail, delegate, messages, log" },
+      { method: "GET", path: "/api/…", auth: "Bearer WEBHOOK_SECRET", purpose: "Panel API: meta, config, jobs, agents, onboarding, messages, setup" },
     ],
   });
+});
+
+/** Team chat history for the panel. */
+adminRoutes.get("/messages", async (c) => c.json({ messages: await teamFeed(c.env, 200) }));
+
+/** The human posts to the team, or relays an offline agent's message (from = that intern). */
+adminRoutes.post("/messages", async (c) => {
+  const body = z
+    .object({ from: z.string().optional(), to: z.string(), text: z.string().trim().min(1).max(4000), business: z.string().optional() })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!body.success) throw new HttpError(422, "to and text are required");
+  const from = body.data.from ? parseRecipient(body.data.from) : "Human";
+  const to = parseRecipient(body.data.to);
+  if (!from || from === "team") throw new HttpError(422, "from must be an intern or Human");
+  if (!to || to === from) throw new HttpError(422, "to must be an intern, Human or team (not the sender)");
+  const business = body.data.business ? (await businessFromRef(c.env, body.data.business)).id : undefined;
+  return c.json(await sendMessage(c.env, { from, to, text: body.data.text, business }), 201);
 });

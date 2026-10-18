@@ -15,7 +15,7 @@ export interface JobState {
   error?: string;
   attempts?: number;
   result?: DispatchResult;
-  done: { deliverable?: boolean; status?: boolean; log?: boolean; notify?: boolean };
+  done: { deliverable?: boolean; status?: boolean; log?: boolean; notify?: boolean; team?: boolean };
   createdAt?: string;
   updatedAt?: string;
 }

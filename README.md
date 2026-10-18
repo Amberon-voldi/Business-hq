@@ -4,7 +4,8 @@ One always-on server that runs an AI team ("AI Interns") across **multiple busin
 
 - **Delegate anything:** emails, research, social posts, marketing copy, code and docs. Send work from the panel, Notion, Slack, GitHub or the API.
 - **Shared context:** each business has a Notion **HQ doc** (Product Brief, Brand Rules, Tech Stack, Roadmap, AI Interns, Task Board, Log). Every task gets only the sections it needs.
-- **Two ways to work:** the server can run an intern itself through the Claude or Grok API, or put the task in the intern's **inbox** for an external agent (Grok in its own app, a Claude project, a custom GPT…). Inbox agents are onboarded with a generated setup prompt and work hands-free through the agent API.
+- **No per-token API bill by default:** every intern runs in an app you already use (a Claude Project or Claude Code on your Pro/Max plan, Grok…). business-hq is only the coordination hub: inboxes, shared context, team chat and the Notion write-back. You give each intern **one setup prompt** containing its connector URL, key, endpoints, webhooks, team roster and routine, and it works from there.
+- **Interns talk to each other:** they delegate tasks, message teammates or the whole team, and get a message automatically when delegated work is done or blocked.
 - **Everything lands in Notion:** task status, the deliverable on the task page, and an audit line in the business's **Log**.
 - **Management panel** at `/panel`: overview, delegate, task board, jobs, agents, business directory, HQ context, and a setup checklist with every key, env var, webhook URL and endpoint.
 
@@ -15,9 +16,9 @@ One always-on server that runs an AI team ("AI Interns") across **multiple busin
      Worker (Hono) ── business directory + config (KV)
                  │
      ┌───────────┴─────────────┐
- delivery: api              delivery: inbox
- Queue → Claude/Grok        waits for the external agent
-     │                       (GET /agent/v1/tasks → complete)
+ delivery: inbox (default)   delivery: api (optional, billed)
+ intern's own app via         Queue → Claude/Grok API
+ MCP connector / HTTP API     (needs ANTHROPIC_API_KEY / XAI_API_KEY)
      └───────────┬─────────────┘
                  ▼
   brand check → Notion (status · deliverable · Log) → Slack reply
@@ -35,8 +36,8 @@ npx wrangler queues create ai-interns-dispatch-dlq    # dead-letter queue (the r
 
 npx wrangler secret put WEBHOOK_SECRET      # openssl rand -hex 32 — also your panel password
 npx wrangler secret put NOTION_TOKEN        # Notion internal integration
-npx wrangler secret put ANTHROPIC_API_KEY   # Claude (Code, Pro, Muse)
 npx wrangler secret put NOTION_HQ_PAGE_ID   # optional: noida.fit's HQ page (or set it in the panel)
+# No ANTHROPIC_API_KEY / XAI_API_KEY needed: interns work in their own apps.
 
 npm run check && npm run deploy             # or push to main if Workers Builds is connected
 ```
@@ -49,9 +50,9 @@ Then open **`https://<worker>/panel`**, sign in with `WEBHOOK_SECRET`, and follo
 |---|---|---|
 | `WEBHOOK_SECRET` | ✓ | Panel sign-in, `/dispatch` and `/context` auth, Notion automation header, and the seed for agent tokens |
 | `NOTION_TOKEN` | ✓ | Read HQ docs and write status, deliverables and logs |
-| `ANTHROPIC_API_KEY` | ✓ | Runs Code / Pro / Muse when delivery is `api` |
+| `ANTHROPIC_API_KEY` | | Only for `api` delivery. Billed per token by Anthropic, **separately from a Claude subscription** |
 | `NOTION_HQ_PAGE_ID` | | noida.fit's HQ page (can be set in Directory instead) |
-| `XAI_API_KEY` | | Runs Grok when its delivery is `api` |
+| `XAI_API_KEY` | | Only for Grok on `api` delivery (billed per token by xAI) |
 | `SLACK_SIGNING_SECRET` | | Verifies `/intern` commands and @mentions |
 | `SLACK_BOT_TOKEN` | | Threaded replies, and posting after Slack's 30-minute `response_url` window |
 | `GITHUB_WEBHOOK_SECRET` | | GitHub webhook signature (falls back to `WEBHOOK_SECRET`) |
@@ -106,17 +107,26 @@ Brand Rules are always attached for Grok and Muse, for `email`, `social` and `co
 | **Grok** | Social & trends: X posts, threads, trend scans | Grok (xAI) |
 | **Muse** | Creative & brand: marketing copy, campaigns, newsletters | Claude |
 
-**Delivery** is set per intern in the **Agents** tab, and can be overridden per task:
-- **API**: the worker runs the task itself through the queue, with retries.
-- **Inbox**: the task waits for the external agent, which picks it up through the agent API, or you paste its result into the panel.
+**Delivery** is set per intern in the **Agents** tab:
+- **Inbox** *(default)*: the intern's own app does the work. No API key, no per-token bill.
+- **API** *(optional)*: the worker calls Claude/Grok itself. This is only possible when that provider's key is set, and it's billed per token. Without a key, tasks always go to the inbox.
 
-### Onboarding an external agent
-Agents tab → intern → **Setup prompt** → paste it into the agent (e.g. Grok, a Claude project, a custom GPT with actions). The prompt includes:
-- who the intern is, its teammates, and both businesses
-- the base URL and the intern's **own token**. Tokens are derived from `WEBHOOK_SECRET`, scoped to that intern, and rotate when the secret does
-- every agent endpoint, the hands-free working loop ("check in" → briefing → tasks → claim → complete/delegate → report), and the ground rules (one business per task, brand rules, drafts only, no invented facts)
+### Onboarding an intern (one prompt)
+Agents tab → intern → **Setup prompt** → copy it into the app the intern runs in. The prompt contains:
+- identity, role, teammates (plus `Human`), and every business
+- **Connector URL (MCP)** `https://<worker>/mcp/<key>`, with instructions for the Claude app (Settings → Connectors → Add custom connector) and Claude Code (`claude mcp add --transport http business-hq <url>`)
+- **HTTP API** base URL + `Authorization: Bearer <key>`, with every endpoint and body
+- the webhooks and how work arrives (panel, Slack, Notion, GitHub, teammates)
+- the routine ("check in" → messages → briefing → get/claim/complete → delegate → report), the team-chat etiquette, and the ground rules (one business per task, brand rules, drafts only, no invented facts)
 
-For agents that **can't make HTTP calls**, use **Offline pack**: the shared context and the current inbox, pasted in. The agent answers with `=== RESULT <id> === … === END ===` blocks, which you paste into **Agents → Paste results**, and they're written to Notion like any other result.
+Keys are derived from `WEBHOOK_SECRET` and scoped to one intern; changing the secret rotates them all.
+
+**Hands-free:** in Claude Code run `/loop 15m check in`. In a chat app, say "check in" whenever you want it to work.
+
+**Apps that can't call tools:** use the **Offline pack** (context, inbox and messages pasted in). The intern replies with `=== RESULT <id> ===` and `=== MESSAGE <to> ===` blocks; paste them into **Agents → Paste an offline agent's reply**.
+
+### MCP tools
+`check_in`, `get_briefing`, `list_tasks`, `get_task`, `claim_task`, `complete_task`, `fail_task`, `delegate_task`, `send_message`, `read_messages`, `log_note`.
 
 ---
 
@@ -140,8 +150,12 @@ For agents that **can't make HTTP calls**, use **Offline pack**: the shared cont
 | `POST` | `/api/businesses/:id/test` | Read the HQ doc fresh and report what was found |
 | `GET` | `/api/jobs?business=&owner=&status=` · `/api/jobs/:id` | Job history (7 days) |
 | `POST` | `/api/jobs/:id/retry` · `/api/jobs/:id/complete` | Re-run · submit an offline agent's result |
-| `GET` | `/api/agents` · `/api/onboarding/:owner?variant=connected\|offline` | Tokens, inbox counts · setup prompts |
+| `GET` | `/api/agents` · `/api/onboarding/:owner?variant=connected\|offline` | Keys, connector URLs, inbox and unread counts · setup prompts |
+| `GET` · `POST` | `/api/messages` | Team chat feed · post as Human (or relay as an intern: `{from, to, text}`) |
 | `GET` | `/api/setup` | Secrets status, bindings, per-business webhook URLs, endpoint list |
+
+### Agent connector (MCP)
+`POST /mcp/<agent key>`: stateless MCP over Streamable HTTP with the tools listed above.
 
 ### Agents (Bearer agent token, `/agent/v1`)
 | Method | Path | |
@@ -150,7 +164,8 @@ For agents that **can't make HTTP calls**, use **Offline pack**: the shared cont
 | `GET` | `/briefing?business=<id>&format=json` | Shared context (Markdown by default) |
 | `GET` | `/tasks` · `/tasks/:id` | Inbox · one task with a ready-made prompt (system + user) |
 | `POST` | `/tasks/:id/claim` · `/complete` · `/fail` | `complete`: `{summary?, output}` · `fail`: `{reason}` |
-| `POST` | `/delegate` | `{task, owner?, kind?, business?, notes?, parent_task_id?}`. Hand off to a teammate (max chain depth 3, not to yourself) |
+| `POST` | `/delegate` | `{task, owner?, kind?, business?, notes?, parent_task_id?}`. Hand off to a teammate (max chain depth 3, not to yourself); they get a message |
+| `GET` | `/messages?history=1` · `POST /messages` | Unread team messages (marked read) · `{to: Code\|Pro\|Grok\|Muse\|Human\|team, text, business?, task_id?}` |
 | `POST` | `/log` | `{business?, message}` adds a note to that business's HQ Log |
 
 ### Examples
@@ -184,7 +199,8 @@ Slack: `/intern spi email follow up with the distributor about the revised quote
 - Webhooks are verified, acknowledged in under a second, and processed through the queue (retries with backoff, dead-letter queue). A failed job sets the task to **Blocked**, logs ❌, and replies in Slack.
 - Each job's result and write-back steps are checkpointed in KV, so retries never call the model twice or write duplicates.
 - HQ context is cached per business for 5 minutes. If Notion is down, the last good copy (up to 24 h old) is served.
-- Claude calls stream, cache the system prompt, use adaptive thinking with `CLAUDE_EFFORT`, and enable server-side refusal fallbacks.
+- With `api` delivery (optional), Claude calls stream, cache the system prompt, use adaptive thinking with `CLAUDE_EFFORT`, and enable server-side refusal fallbacks.
+- Connector URLs carry the agent key, so request logs redact them (`/mcp/[token]`).
 - The panel ships with a strict nonce-based CSP. Agent output is only ever rendered as text.
 
 ## Development
@@ -199,7 +215,8 @@ npm run check                    # typecheck + tests + bundle
 src/
   index.ts            app, middleware, routing, queue handler
   config/store.ts     business directory + intern delivery (KV)
-  routes/             webhooks (notion, github, slack), dispatch, context, jobs, admin, agent API, panel
+  routes/             webhooks (notion, github, slack), dispatch, context, jobs, admin, agent API, MCP, panel
+  team/messages.ts    team chat between interns and the human
   dispatch/           job types, start (api/inbox), queue consumer, run pipeline, job records
   agents/             registry + task kinds, prompt builder, brand safety, onboarding prompts, Claude/Grok clients
   notion/             HQ fetch + cache, heading parser, Markdown→blocks, write-back

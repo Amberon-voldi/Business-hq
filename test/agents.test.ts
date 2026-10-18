@@ -19,8 +19,9 @@ describe("agent tokens", () => {
 });
 
 describe("config & directory", () => {
-  it("seeds noida.fit and SP International", () => {
+  it("seeds noida.fit and SP International, all interns on inbox delivery", () => {
     expect(ConfigSchema.safeParse(config).success).toBe(true);
+    expect(Object.values(config.interns).every((i) => i.delivery === "inbox")).toBe(true);
     expect(config.businesses.map((b) => b.id)).toEqual(["noidafit", "spinternational"]);
   });
 
@@ -59,12 +60,18 @@ describe("Slack command parsing", () => {
 });
 
 describe("onboarding prompts", () => {
-  it("connected prompt carries the base URL, token, loop and rules", () => {
+  it("connected prompt carries connector URL, key, endpoints, hooks, routine and rules", () => {
     const p = connectedPrompt({ owner: "Grok", config, origin: "https://hq.example.dev", token: "aih_grok_x" });
     expect(p).toContain('you are "Grok"');
+    expect(p).toContain("https://hq.example.dev/mcp/aih_grok_x");
+    expect(p).toContain("claude mcp add --transport http business-hq");
     expect(p).toContain("https://hq.example.dev/agent/v1");
     expect(p).toContain("Authorization: Bearer aih_grok_x");
     expect(p).toContain("POST /delegate");
+    expect(p).toContain("send_message");
+    expect(p).toContain("/webhook/notion?business=spinternational");
+    expect(p).toContain("/loop 15m check in");
+    expect(p).not.toContain('"api" delivery'); // inbox is the default
     expect(p).toContain("spinternationalpvtltd.com");
     expect(p).toContain("drafts");
     expect(p).toContain('"Fitness ID"');
@@ -73,6 +80,7 @@ describe("onboarding prompts", () => {
   it("offline pack inlines context and the RESULT hand-back format", () => {
     const p = offlinePrompt({ owner: "Muse", config, contexts: [{ business: config.businesses[0]!, context: null, error: "x" }], tasks: [] });
     expect(p).toContain("=== RESULT <task id> ===");
+    expect(p).toContain("=== MESSAGE <Code|Pro|Grok|Muse|Human|team> ===");
     expect(p).toContain("inbox is empty");
     expect(p).not.toContain("Bearer");
   });

@@ -1,3 +1,4 @@
+import { AGENTS } from "../agents/registry";
 import { deliveryFor, findBusiness, getConfig } from "../config/store";
 import type { Env } from "../env";
 import { DispatchError, HttpError, errorMessage } from "../lib/errors";
@@ -27,7 +28,12 @@ export async function startDispatch(
   const business = findBusiness(config, job.business);
   if (!business) throw new HttpError(422, `Unknown business "${job.business}"`);
   job.business = business.id;
-  job.delivery ??= deliveryFor(config, job.owner);
+  const apiKeySet = AGENTS[job.owner].provider === "xai" ? Boolean(env.XAI_API_KEY) : Boolean(env.ANTHROPIC_API_KEY);
+  if (job.delivery === "api" && !apiKeySet) {
+    throw new HttpError(422, `${job.owner} can't run via API: no ${AGENTS[job.owner].provider === "xai" ? "XAI_API_KEY" : "ANTHROPIC_API_KEY"} is set. Use inbox delivery.`);
+  }
+  // Without the provider's key an intern always works from its inbox, so nothing is ever billed per token by accident.
+  job.delivery ??= apiKeySet ? deliveryFor(config, job.owner) : "inbox";
 
   const pageId = job.taskPageId;
   if (pageId && !opts.taskLocked) {

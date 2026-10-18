@@ -16,6 +16,7 @@ import { nodeToMarkdown, richTextToPlain } from "../notion/parse";
 import { taskDetails } from "../notion/properties";
 import type { HqTable } from "../notion/types";
 import { appendDeliverable, appendLogEntry, updateTaskStatus } from "../notion/writeback";
+import { sendMessage } from "../team/messages";
 import { type JobState, loadJobState, markJob, saveJobState } from "./jobs";
 import type { DispatchJob, DispatchResult } from "./types";
 
@@ -148,6 +149,18 @@ async function finalize(env: Env, job: DispatchJob, business: Business, state: J
     });
   });
 
+  await step(env, job, state, "team", async () => {
+    // Close the loop with whoever handed this over.
+    if (!job.delegation) return;
+    await sendMessage(env, {
+      from: job.owner,
+      to: job.delegation.by,
+      text: `Done: "${job.task.slice(0, 160)}" — ${result.summary.replace(/[.\s]+$/, "")}${result.warnings.length ? ` (⚠️ ${result.warnings.length} warning(s))` : ""}. Full output is in ${business.name}'s Notion (task ${job.id}).`,
+      business: business.id,
+      taskId: job.id,
+    });
+  });
+
   state.status = "done";
   await saveJobState(env, job.id, state);
   if (job.taskPageId) await env.HQ_CACHE.delete(activeTaskKey(job.taskPageId));
@@ -167,7 +180,7 @@ async function step(
     await fn();
   } catch (err) {
     // The result is already saved, so retrying only redoes the write-backs that failed.
-    const retryable = name === "notify" ? true : isRetryableNotionError(err);
+    const retryable = name === "notify" || name === "team" ? true : isRetryableNotionError(err);
     throw new DispatchError(`Write-back step "${name}" failed: ${errorMessage(err)}`, retryable, { cause: err });
   }
   state.done[name] = true;
@@ -281,6 +294,15 @@ export async function reportFailure(env: Env, job: DispatchJob, err: unknown): P
     if (job.taskPageId) attempts.push(updateTaskStatus(notion, job.taskPageId, "Blocked"));
   }
   if (job.taskPageId) attempts.push(env.HQ_CACHE.delete(activeTaskKey(job.taskPageId)));
+  attempts.push(
+    sendMessage(env, {
+      from: job.owner,
+      to: job.delegation?.by ?? "Human",
+      text: `Blocked on "${job.task.slice(0, 160)}": ${reason}`,
+      ...(job.business ? { business: job.business } : {}),
+      taskId: job.id,
+    }),
+  );
   if (job.source.kind === "slack") {
     attempts.push(
       postSlackReply(env.SLACK_BOT_TOKEN, {

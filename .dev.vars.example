@@ -1,9 +1,9 @@
 # Copy to .dev.vars for `wrangler dev`. Never commit the real file.
 WEBHOOK_SECRET=change-me-long-random-string
 NOTION_TOKEN=ntn_xxx
-ANTHROPIC_API_KEY=sk-ant-xxx
 
-# Optional
+# Optional (ANTHROPIC/XAI keys only for "api" delivery, billed per token)
+ANTHROPIC_API_KEY=
 NOTION_HQ_PAGE_ID=
 XAI_API_KEY=
 SLACK_SIGNING_SECRET=

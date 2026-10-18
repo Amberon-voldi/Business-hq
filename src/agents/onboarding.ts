@@ -1,6 +1,7 @@
 import { type Business, type HqConfig, deliveryFor } from "../config/store";
 import type { JobListItem } from "../dispatch/jobs";
 import type { ContextSectionKey, HqContext } from "../notion/types";
+import type { TeamMessage } from "../team/messages";
 import { businessLine, renderSections } from "./prompt";
 import { AGENTS, OWNERS, type Owner, TASK_KINDS, TASK_KIND_KEYS } from "./registry";
 
@@ -77,46 +78,85 @@ ${brandGuardrails(config)}
 
 export function connectedPrompt(args: { owner: Owner; config: HqConfig; origin: string; token: string }): string {
   const { owner, config, origin, token } = args;
-  const base = `${origin}/agent/v1`;
+  const api = `${origin}/agent/v1`;
+  const mcp = `${origin}/mcp/${token}`;
+  const multi = config.businesses.length > 1;
+  const hooks = config.businesses
+    .map((b) => {
+      const q = multi ? `?business=${b.id}` : "";
+      return `- **${b.name}**: Notion Task Board → \`${origin}/webhook/notion${q}\` · GitHub → \`${origin}/webhook/github${q}\``;
+    })
+    .join("\n");
   const apiNote =
     deliveryFor(config, owner) === "inbox"
       ? ""
-      : `\n_Note: ${owner} is currently set to "api" delivery, so the HQ server runs most of your tasks itself. Your inbox fills up when work is assigned to you with delivery "inbox", or once the admin switches you to inbox in the panel._\n`;
+      : `\n> ${owner} is currently set to "api" delivery, so the server runs most of your tasks itself. Ask the human to switch you to Inbox in the panel if you should do them.\n`;
+
   return `${header(owner, config)}
 
-## Connection
-- Base URL: \`${base}\`
-- Send this header on every request: \`Authorization: Bearer ${token}\`
-- The token only grants ${owner}'s access. Never paste it into a task, an output or a message.
+**The human** (founder) is also on the team as \`Human\`. Message them for decisions, approvals and anything only they know.
 
-## Endpoints
-| Call | What it's for |
-| --- | --- |
-| \`GET /me\` | Who you are, the businesses, your teammates |
-| \`GET /briefing\` | Shared context for every business (add \`?business=<id>\` for one) |
-| \`GET /tasks\` | Your inbox: tasks assigned to you |
-| \`GET /tasks/<id>\` | One task, with a ready-made prompt built from the right business's context |
-| \`POST /tasks/<id>/claim\` | Mark it in progress before you start |
-| \`POST /tasks/<id>/complete\` | \`{"summary": "...", "output": "<deliverable in Markdown>"}\` writes it to Notion and replies in Slack |
-| \`POST /tasks/<id>/fail\` | \`{"reason": "what blocked you and what you need"}\` |
-| \`POST /delegate\` | \`{"business": "<id>", "owner": "Code, Pro, Grok or Muse", "kind": one of ${KIND_LIST}, "task": "...", "notes": "...", "parent_task_id": "<optional>"}\` |
-| \`POST /log\` | \`{"business": "<id>", "message": "..."}\` adds a note to that business's HQ Log |
+## 1 · Connect to business-hq
+business-hq is the team's shared server: your inbox, the shared context, team chat and the Notion write-back. Use the first option your environment supports.
 
-## Your working loop (hands-free)
-When a session starts, or whenever you're told **"check in"**:
-1. \`GET /briefing\` to refresh context, then \`GET /tasks\`.
-2. For each task: \`GET /tasks/<id>\`, \`POST …/claim\`, do the work by following the returned prompt, then \`POST …/complete\`. If you're truly blocked, \`POST …/fail\` with what you need.
-3. If part of the work belongs to a teammate (code → Code; research or business email → Pro; social → Grok; marketing copy → Muse), \`POST /delegate\` it with clear notes and mention that in your result.
-4. Finish with a short report to the human: done, delegated, blocked.
+**A. Connector (MCP): Claude apps, Claude Code, any MCP client**
+- Connector URL (it contains your key; keep it private): \`${mcp}\`
+- Claude app: Settings → Connectors → Add custom connector → name it **business-hq** → paste the URL.
+- Claude Code: \`claude mcp add --transport http business-hq ${mcp}\`
+- Tools: \`check_in\`, \`get_briefing\`, \`list_tasks\`, \`get_task\`, \`claim_task\`, \`complete_task\`, \`fail_task\`, \`delegate_task\`, \`send_message\`, \`read_messages\`, \`log_note\`.
 
-Work through the whole inbox without asking for confirmation. Ask the human only when a task can't be done without information nobody has given you.
+**B. HTTP API: anything that can make web requests (scripts, actions, tools)**
+- Base URL: \`${api}\`
+- Key, sent on every request: \`Authorization: Bearer ${token}\`
+
+| Call | Same as tool | Body |
+| --- | --- | --- |
+| \`GET /me\` | (part of check_in) | |
+| \`GET /briefing?business=<id>\` | get_briefing | |
+| \`GET /tasks\` · \`GET /tasks/<id>\` | list_tasks · get_task | |
+| \`POST /tasks/<id>/claim\` | claim_task | |
+| \`POST /tasks/<id>/complete\` | complete_task | \`{"summary": "...", "output": "<Markdown>"}\` |
+| \`POST /tasks/<id>/fail\` | fail_task | \`{"reason": "..."}\` |
+| \`POST /delegate\` | delegate_task | \`{"task", "owner", "kind", "business", "notes", "parent_task_id"}\` |
+| \`GET /messages?history=1\` · \`POST /messages\` | read_messages · send_message | \`{"to": "Code, Pro, Grok, Muse, Human or team", "text", "business", "task_id"}\` |
+| \`POST /log\` | log_note | \`{"business", "message"}\` |
+
+Task kinds: ${KIND_LIST}.
+
+**C. Can't connect?** Say so and ask the human for your **offline pack** (panel → Agents → ${owner}).
+
+Your key only grants ${owner}'s access. Never put it in a deliverable, a message or anywhere public.
+
+## 2 · How work reaches the team
+You don't call these; they're how work arrives, and everything ends up in your inbox:
+- The human delegates from the panel (\`${origin}/panel\`) or Slack (\`/intern [business] <intern or task type> <task>\`).
+- A Notion Task Board row set to **In progress** with Owner = ${owner}.
+- GitHub issues or PRs labelled \`ai:${owner.toLowerCase()}\`.
+- A teammate's \`delegate_task\`.
+
+Webhooks (reference):
+${hooks}
+- Slack → \`${origin}/webhook/slack\`
+
+## 3 · Your routine (hands-free)
+Whenever a session starts, or you're told **"check in"**:
+1. \`check_in\` reads your messages and inbox. Answer teammates' questions first, briefly.
+2. \`get_briefing\` for any business you haven't loaded this session.
+3. For each task, oldest first: \`get_task\` → \`claim_task\` → do the work by following the prompt it returns → \`complete_task\`. If you're truly blocked, use \`fail_task\` with exactly what you need.
+4. Work that belongs to a teammate goes to them with \`delegate_task\` and clear notes (code → Code; research or business email → Pro; social → Grok; marketing copy → Muse). When they finish, you get a message. Fold their result into yours if it was part of your task.
+5. End with a 3-line report to the human: done · delegated · blocked.
+
+Don't ask for confirmation between steps. Ask the human (\`send_message\` to \`Human\`) only when you can't proceed without them.
+To stay on duty without prompting: in Claude Code run \`/loop 15m check in\`. In a chat app, the human just says "check in".
 ${apiNote}
+## 4 · Talking to teammates
+- Use \`send_message\` for questions, hand-offs and FYIs. Keep it short and specific, and include the business id and task id when relevant.
+- \`to: "team"\` only for things everyone needs.
+- Work requests go through \`delegate_task\`, not a message, so they're tracked and land in Notion.
+
 ${rules(config)}
 
-## If you can't make HTTP requests
-Say so, and ask the human to paste your **offline pack** (panel → Agents → ${owner} → Offline pack).
-
-Reply "Ready. ${owner} checking in." and then run the loop.`;
+Reply "Ready. ${owner} checking in." and then run your routine.`;
 }
 
 export function offlinePrompt(args: {
@@ -124,8 +164,12 @@ export function offlinePrompt(args: {
   config: HqConfig;
   contexts: BusinessContext[];
   tasks: { item: JobListItem; detail: string }[];
+  messages?: TeamMessage[];
 }): string {
   const { owner, config, contexts, tasks } = args;
+  const inboxMessages = (args.messages ?? [])
+    .map((m) => `- **${m.from}** → ${m.to}${m.business ? ` (${m.business})` : ""}: ${m.text}`)
+    .join("\n");
   const sections = briefingSections(owner);
   const ctx = contexts
     .map(({ business, context, error }) => {
@@ -159,10 +203,19 @@ Summary: <one sentence>
 === END ===
 \`\`\`
 
-If something should go to a teammate, add a line under the result: \`Delegate to <Owner> (<business id>): <task>\`.
+To message a teammate or the human, or to hand work to a teammate, add:
+
+\`\`\`
+=== MESSAGE <Code|Pro|Grok|Muse|Human|team> ===
+<your message; for a hand-off, say exactly what you need and for which business>
+=== END ===
+\`\`\`
 
 ## Shared context
 ${ctx}
+
+## Messages for you
+${inboxMessages || "_No messages._"}
 
 ## Your inbox
 ${inbox}

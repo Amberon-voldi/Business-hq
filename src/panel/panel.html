@@ -163,6 +163,7 @@
       <button role="tab" data-tab="tasks">Task Board</button>
       <button role="tab" data-tab="jobs">Jobs</button>
       <button role="tab" data-tab="agents">Agents</button>
+      <button role="tab" data-tab="team">Team chat</button>
       <button role="tab" data-tab="directory">Directory</button>
       <button role="tab" data-tab="context">HQ Context</button>
       <button role="tab" data-tab="setup">Setup</button>
@@ -205,13 +206,13 @@
             <label class="field"><span>Delivery</span>
               <select id="d-delivery">
                 <option value="">Intern default</option>
-                <option value="api">Run now (API)</option>
+                <option value="api">Run now via API (billed per token)</option>
                 <option value="inbox">Agent inbox</option>
               </select>
             </label>
             <label class="field"><span>Notion task (optional)</span><input id="d-notion" type="text" placeholder="Task Board page URL or id"></label>
           </div>
-          <label class="row" style="margin-bottom:16px"><input id="d-wait" type="checkbox"> <span class="muted">Wait for the result here (API delivery; can take a few minutes)</span></label>
+          <label class="row" style="margin-bottom:16px"><input id="d-wait" type="checkbox"> <span class="muted">Wait for the result here (API delivery only)</span></label>
           <div id="d-error" class="errbox" hidden></div>
           <button class="btn primary" type="submit" id="d-submit">Delegate</button>
         </form>
@@ -271,15 +272,42 @@
     <section data-panel="agents" hidden>
       <div class="card" style="margin-bottom:16px">
         <h2>Onboard your agents</h2>
-        <p class="muted" style="margin:0">Give each intern its setup prompt once. <b>Connected</b> agents (anything that can make HTTP calls: custom GPTs with actions, Claude with tools, scripts) then work hands-free. They pull their inbox, read shared context, complete tasks, delegate to teammates and write to the log. If an agent can't make HTTP calls, give it the <b>Offline pack</b> instead and paste its results back below.</p>
-        <p class="hint">Delivery decides who does the work. <b>API</b>: this server calls the model itself. <b>Inbox</b>: the task waits for the external agent.</p>
+        <p class="muted" style="margin:0 0 8px">Each intern runs in an app you already use, so nothing is billed per token. Copy its <b>Setup prompt</b> into that app once. It contains the connector URL, the API key, every endpoint, the webhooks, the team roster and the working routine.</p>
+        <ul class="muted" style="margin:0 0 8px;padding-left:18px;font-size:13px">
+          <li><b>Claude app (Pro/Max):</b> Settings → Connectors → Add custom connector → paste the intern's <b>Connector URL</b>, then paste the setup prompt into a Project's instructions.</li>
+          <li><b>Claude Code:</b> <code>claude mcp add --transport http business-hq &lt;Connector URL&gt;</code>, then run <code>/loop 15m check in</code> to stay on duty hands-free.</li>
+          <li><b>Apps that can't call tools</b> (e.g. a plain chat): use the <b>Offline pack</b> and paste the reply back below.</li>
+        </ul>
+        <p class="hint" style="margin:0">Delivery: <b>Inbox</b> means the intern's own app does the work (default, no API bill). <b>API</b> means this server calls the model, billed per token by Anthropic or xAI; it's only available when that key is set.</p>
       </div>
       <div class="grid cards" id="agent-cards"></div>
       <div class="card" style="margin-top:16px">
-        <h2>Paste results from an offline agent</h2>
-        <p class="muted" style="margin-top:0">Paste the agent's reply. Every <code>=== RESULT &lt;task id&gt; === … === END ===</code> block is submitted to its task and written to Notion.</p>
+        <h2>Paste an offline agent's reply</h2>
+        <p class="muted" style="margin-top:0">Every <code>=== RESULT &lt;task id&gt; ===</code> block is submitted to its task and written to Notion; every <code>=== MESSAGE &lt;to&gt; ===</code> block is posted to team chat as that intern.</p>
+        <label class="field" style="max-width:240px"><span>Reply is from</span><select id="paste-from"></select></label>
         <textarea id="paste-results" placeholder="=== RESULT 1f0c… ===&#10;Summary: …&#10;…&#10;=== END ==="></textarea>
         <div class="row" style="margin-top:10px"><button class="btn primary" id="paste-submit">Submit results</button><span class="muted" id="paste-status"></span></div>
+      </div>
+    </section>
+
+    <!-- Team chat -->
+    <section data-panel="team" hidden>
+      <div class="grid two">
+        <div class="card">
+          <div class="row" style="margin-bottom:12px"><h2 style="margin:0">Team chat</h2><span class="spacer"></span><button class="btn small" id="m-refresh">Refresh</button></div>
+          <div id="m-feed" style="max-height:62vh;overflow:auto"></div>
+        </div>
+        <form class="card" id="m-form">
+          <h2>Send a message</h2>
+          <div class="cols">
+            <label class="field"><span>From</span><select id="m-from"></select></label>
+            <label class="field"><span>To</span><select id="m-to"></select></label>
+          </div>
+          <label class="field"><span>Business (optional)</span><select id="m-business"></select></label>
+          <label class="field"><span>Message</span><textarea id="m-text" required maxlength="4000" placeholder="e.g. Muse, use the new Q4 launch date (Nov 20) in all copy"></textarea></label>
+          <button class="btn primary" type="submit">Send</button>
+          <p class="hint">Interns read messages on their next check-in. Choose an intern as "From" to relay an offline agent's message.</p>
+        </form>
       </div>
     </section>
 
@@ -480,7 +508,7 @@
   });
 
   // ---------- tabs ----------
-  const TABS = ["overview", "dispatch", "tasks", "jobs", "agents", "directory", "context", "setup"];
+  const TABS = ["overview", "dispatch", "tasks", "jobs", "agents", "team", "directory", "context", "setup"];
   function setTab(name) {
     currentTab = name;
     stopPolling();
@@ -488,7 +516,7 @@
     document.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== name));
     safe(() => history.replaceState(null, "", "#" + name));
     ({ overview: loadOverview, tasks: () => loadTasks(false), jobs: () => loadJobs(false), agents: loadAgents,
-       directory: renderDirectory, context: () => loadContext(false), setup: loadSetup }[name] || (() => {}))();
+       team: loadTeam, directory: renderDirectory, context: () => loadContext(false), setup: loadSetup }[name] || (() => {}))();
   }
   document.querySelectorAll("nav.tabs button").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
   document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.goto)));
@@ -543,10 +571,17 @@
     const k = meta.kinds.find((x) => x.key === $("#d-kind").value);
     if (k && k.owner) { selectedOwner = k.owner; renderOwners(); renderSections(true); }
   });
+  function syncDeliveryOptions() {
+    const owner = meta.owners.find((o) => o.owner === selectedOwner);
+    const apiOpt = $("#d-delivery").querySelector('option[value="api"]');
+    apiOpt.disabled = !(owner && owner.apiAvailable);
+    if (apiOpt.disabled && $("#d-delivery").value === "api") $("#d-delivery").value = "";
+  }
   function renderOwners() {
+    syncDeliveryOptions();
     $("#owner-picker").replaceChildren(...meta.owners.map((o) =>
       h("button", { type: "button", class: "owner", "aria-pressed": String(o.owner === selectedOwner), onclick: () => { selectedOwner = o.owner; renderOwners(); renderSections(true); } },
-        h("b", {}, o.owner, " ", h("span", { class: "muted", style: "font-weight:400;font-size:12px" }, "· " + (o.delivery === "inbox" ? "inbox" : o.provider === "xai" ? "Grok API" : "Claude API"))),
+        h("b", {}, o.owner, " ", h("span", { class: "muted", style: "font-weight:400;font-size:12px" }, "· " + (o.delivery === "inbox" ? "own app" : o.provider === "xai" ? "Grok API" : "Claude API"))),
         h("small", {}, o.role))));
   }
   function renderSections(resetToDefaults) {
@@ -728,16 +763,22 @@
     } catch (e) { $("#agent-cards").replaceChildren(h("div", { class: "errbox" }, errText(e))); }
   }
   function agentCard(a) {
-    const masked = a.token.slice(0, 12) + "…" + a.token.slice(-4);
-    const seg = h("div", { class: "seg", role: "group", "aria-label": "Delivery" }, ["api", "inbox"].map((d) =>
-      h("button", { type: "button", "aria-pressed": String(a.delivery === d), onclick: () => setDelivery(a.owner, d) }, d === "api" ? "API" : "Inbox")));
+    const mask = (t) => t.slice(0, 12) + "…" + t.slice(-4);
+    const maskedUrl = a.mcpUrl.slice(0, a.mcpUrl.indexOf("/mcp/") + 5) + mask(a.token);
+    const seg = h("div", { class: "seg", role: "group", "aria-label": "Delivery" },
+      h("button", { type: "button", "aria-pressed": String(a.delivery === "inbox"), onclick: () => setDelivery(a.owner, "inbox") }, "Inbox"),
+      h("button", { type: "button", "aria-pressed": String(a.delivery === "api"), disabled: !a.apiAvailable,
+        title: a.apiAvailable ? "Server calls the model (billed per token)" : "Needs " + (a.provider === "xai" ? "XAI_API_KEY" : "ANTHROPIC_API_KEY") + " (billed per token)",
+        onclick: () => setDelivery(a.owner, "api") }, "API"));
     return h("div", { class: "card" },
-      h("div", { class: "row", style: "margin-bottom:6px" }, h("h2", { style: "margin:0" }, a.owner), h("span", { class: "tag" }, a.provider === "xai" ? "Grok API" : "Claude API"),
-        h("span", { class: "spacer" }), a.inbox ? pill(a.inbox + " in inbox", "assigned") : null),
+      h("div", { class: "row", style: "margin-bottom:6px" }, h("h2", { style: "margin:0" }, a.owner),
+        h("span", { class: "spacer" }), a.unread ? pill(a.unread + " unread", "warn") : null, a.inbox ? pill(a.inbox + " in inbox", "assigned") : null),
       h("p", { class: "muted", style: "margin:0 0 12px;font-size:13px" }, a.role),
       h("div", { class: "row", style: "margin-bottom:12px" }, h("span", { class: "label", style: "margin:0" }, "Delivery"), seg),
-      h("span", { class: "label" }, "Agent token"),
-      h("div", { class: "copyline" }, h("code", {}, masked), copyBtn(a.token, a.owner + "'s token")),
+      h("span", { class: "label" }, "Connector URL (MCP)"),
+      h("div", { class: "copyline" }, h("code", {}, maskedUrl), copyBtn(a.mcpUrl, a.owner + "'s connector URL")),
+      h("span", { class: "label" }, "API key (Bearer token for " + a.apiBase.replace(/^https?:\/\//, "") + ")"),
+      h("div", { class: "copyline" }, h("code", {}, mask(a.token)), copyBtn(a.token, a.owner + "'s key")),
       h("div", { class: "row", style: "margin-top:12px" },
         h("button", { class: "btn primary small", onclick: () => showPrompt(a.owner, "connected") }, "Setup prompt"),
         h("button", { class: "btn small", onclick: () => showPrompt(a.owner, "offline") }, "Offline pack")));
@@ -766,17 +807,53 @@
   $("#paste-submit").addEventListener("click", async () => {
     const text = $("#paste-results").value;
     const blocks = [...text.matchAll(/===\s*RESULT\s+([0-9a-f-]{8,})\s*===\s*\n([\s\S]*?)\n?===\s*END\s*===/gi)];
+    const msgs = [...text.matchAll(/===\s*MESSAGE\s+([A-Za-z]+)\s*===\s*\n([\s\S]*?)\n?===\s*END\s*===/gi)];
     const status = $("#paste-status");
-    if (!blocks.length) { status.textContent = "No RESULT blocks found."; return; }
+    if (!blocks.length && !msgs.length) { status.textContent = "No RESULT or MESSAGE blocks found."; return; }
     let ok = 0; const errors = [];
     for (const [, id, output] of blocks) {
       try { await api("/api/jobs/" + encodeURIComponent(id) + "/complete", { method: "POST", body: JSON.stringify({ output: output.trim() }) }); ok++; }
       catch (e) { errors.push(id.slice(0, 8) + ": " + errText(e)); }
     }
-    status.textContent = ok + " of " + blocks.length + " saved to Notion." + (errors.length ? " Failed: " + errors.join("; ") : "");
+    for (const [, to, body] of msgs) {
+      try { await api("/api/messages", { method: "POST", body: JSON.stringify({ from: $("#paste-from").value, to, text: body.trim() }) }); ok++; }
+      catch (e) { errors.push("message to " + to + ": " + errText(e)); }
+    }
+    status.textContent = ok + " of " + (blocks.length + msgs.length) + " submitted." + (errors.length ? " Failed: " + errors.join("; ") : "");
     if (!errors.length) $("#paste-results").value = "";
     toast(ok + " result(s) submitted", !!errors.length);
     loadAgents();
+  });
+
+  // ---------- team chat ----------
+  function renderTeamSelects() {
+    const people = ["Human", ...meta.owners.map((o) => o.owner)];
+    const fill = (sel, list) => { const el = $(sel), prev = el.value; el.replaceChildren(...list.map(([v, t]) => h("option", { value: v }, t))); if (prev) el.value = prev; };
+    fill("#m-from", people.map((p) => [p, p === "Human" ? "Me (Human)" : p + " (relay)"]));
+    fill("#m-to", [["team", "Whole team"], ...people.map((p) => [p, p === "Human" ? "Human" : p])]);
+    fill("#m-business", [["", "—"], ...meta.businesses.map((b) => [b.id, b.name])]);
+    fill("#paste-from", meta.owners.map((o) => [o.owner, o.owner]));
+  }
+  async function loadTeam() {
+    const feed = $("#m-feed");
+    try {
+      const { messages } = await api("/api/messages");
+      feed.replaceChildren(...(messages.length ? messages.slice().reverse().map((m) =>
+        h("div", { style: "padding:10px 0;border-bottom:1px solid var(--border)" },
+          h("div", { class: "row", style: "gap:6px" }, h("b", {}, m.from), h("span", { class: "muted" }, "→ " + (m.to === "team" ? "team" : m.to)),
+            m.business ? h("span", { class: "tag" }, bizName(m.business)) : null, h("span", { class: "spacer" }), h("span", { class: "muted", style: "font-size:12px" }, ago(m.createdAt))),
+          h("div", { style: "white-space:pre-wrap;margin-top:4px" }, m.text),
+          m.taskId ? h("a", { href: "#", style: "font-size:12px", onclick: (e) => { e.preventDefault(); openJob(m.taskId); } }, "Open task") : null))
+        : [h("div", { class: "empty" }, "No messages yet. Interns post here when they delegate, finish or need something.")]));
+    } catch (e) { feed.replaceChildren(h("div", { class: "errbox" }, errText(e))); }
+  }
+  $("#m-refresh").addEventListener("click", loadTeam);
+  $("#m-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const body = { from: $("#m-from").value, to: $("#m-to").value, text: $("#m-text").value.trim() };
+    if ($("#m-business").value) body.business = $("#m-business").value;
+    try { await api("/api/messages", { method: "POST", body: JSON.stringify(body) }); $("#m-text").value = ""; toast("Sent"); loadTeam(); }
+    catch (e) { toast(errText(e), true); }
   });
 
   // ---------- directory ----------
@@ -923,7 +1000,7 @@
           s.businesses.map((b) => h("div", {}, h("span", { class: "label" }, b.name), copyLine(b.webhooks.github, b.name + " GitHub webhook URL")))),
         h("div", { class: "card" },
           h("h2", {}, "5 · Agents"),
-          h("p", { class: "muted", style: "margin:0" }, "Open the Agents tab, pick each intern's delivery (API or Inbox), and paste its Setup prompt into the agent (Grok, a Claude project, a custom GPT…). The prompt contains its own scoped token.")),
+          h("p", { class: "muted", style: "margin:0" }, "Open the Agents tab and copy each intern's Setup prompt into the app it runs in (Claude Project with the business-hq connector, Claude Code, or any tool-capable agent). Interns work from their inbox by default, so no API keys or per-token billing are needed.")),
         h("div", { class: "card" },
           h("h2", {}, "All endpoints"),
           h("p", { class: "muted", style: "margin-top:0" }, "Worker URL ", h("code", {}, s.workerUrl)),
@@ -937,7 +1014,7 @@
   // ---------- boot ----------
   function start() {
     $("#login").hidden = true; $("#app").hidden = false; $("#signout").hidden = false;
-    renderBusinessSelects(); renderKinds();
+    renderBusinessSelects(); renderKinds(); renderTeamSelects();
     selectedOwner = selectedOwner || (meta.owners[0] && meta.owners[0].owner);
     renderOwners(); renderSections(true);
     const fromHash = (location.hash || "").slice(1);

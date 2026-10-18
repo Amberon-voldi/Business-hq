@@ -6,7 +6,8 @@ export interface Env {
   NOTION_TOKEN: string;
   /** noida.fit's HQ page; other businesses' HQ pages are set in the panel's Directory. */
   NOTION_HQ_PAGE_ID?: string;
-  ANTHROPIC_API_KEY: string;
+  /** Only needed for interns set to "api" delivery (billed per token by Anthropic). */
+  ANTHROPIC_API_KEY?: string;
   WEBHOOK_SECRET: string;
   XAI_API_KEY?: string;
   GITHUB_WEBHOOK_SECRET?: string;
@@ -28,7 +29,7 @@ export interface Env {
 
 export type AppBindings = { Bindings: Env; Variables: { requestId: string; agent?: Owner } };
 
-const REQUIRED_SECRETS = ["NOTION_TOKEN", "ANTHROPIC_API_KEY", "WEBHOOK_SECRET"] as const;
+const REQUIRED_SECRETS = ["NOTION_TOKEN", "WEBHOOK_SECRET"] as const;
 
 export function missingRequiredSecrets(env: Env): string[] {
   return REQUIRED_SECRETS.filter((k) => !env[k]);
